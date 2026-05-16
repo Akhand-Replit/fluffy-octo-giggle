@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Get-ChildItem -Path \"d:\\\\SHUVO SOFTWARE\\\\MUN Platform\" -Recurse -Directory)",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Sort-Object)",
+      "Bash(Get-ChildItem -Path \"d:\\\\SHUVO SOFTWARE\\\\MUN Platform\\\\src\\\\app\\\\dashboard\" -Recurse -ErrorAction SilentlyContinue)",
+      "Bash(Select-Object FullName)",
+      "Bash(xargs -0 ls -lh)",
+      "Bash(awk '{print $NF}')",
+      "Bash(cat \"d:\\\\SHUVO SOFTWARE\\\\MUN Platform/src/app/dashboard/organizer/events/%5Bid%5D/page.tsx\" 2>/dev/null | head -100)",
+      "Read(//d/SHUVO SOFTWARE/MUN Platform/src/app/dashboard/organizer/events/%5Bid%5D/**)",
+      "Bash(cat \"d:\\\\SHUVO SOFTWARE\\\\MUN Platform/src/app/dashboard/organizer/events/%5Bid%5D/page.tsx\" 2>/dev/null | wc -l)",
+      "Bash(cat \"d:\\\\SHUVO SOFTWARE\\\\MUN Platform/src/app/dashboard/chair/committee/%5Bid%5D/page.tsx\" 2>/dev/null)",
+      "Read(//d/SHUVO SOFTWARE/MUN Platform/src/app/dashboard/chair/committee/%5Bid%5D/**)",
+      "Bash(ls \"d:\\\\SHUVO SOFTWARE\\\\MUN Platform\\\\src\\\\app\\\\dashboard\\\\organizer\\\\events\\\\%5Bid%5D\")"
+    ]
+  }
+}

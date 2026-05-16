@@ -1,0 +1,157 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function userDocExists() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function getUserData() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function getUserRole() {
+      return userDocExists() ? getUserData().role : '';
+    }
+
+    function hasRole(role) {
+      return isSignedIn() && userDocExists() && getUserData().role == role;
+    }
+
+    function isOrganizer() {
+      return isSignedIn() && userDocExists() && (getUserData().role == 'Organizer' || getUserData().role == 'organizer');
+    }
+
+    function isChair() {
+      return isSignedIn() && userDocExists() && (getUserData().role == 'Chair' || getUserData().role == 'chair');
+    }
+
+    function isAdmin() {
+      return isSignedIn() && userDocExists() && (getUserData().role == 'App Admin' || getUserData().role == 'admin' || getUserData().isAdmin == true);
+    }
+
+    // User Profiles
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if request.auth.uid == userId || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Pro Applications
+    match /proApplications/{userId} {
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+    }
+
+    // Events
+    match /events/{eventId} {
+      allow read: if true;
+      allow create: if isOrganizer() || isAdmin() || (isSignedIn() && request.resource.data.organizerId == request.auth.uid);
+      allow update, delete: if isSignedIn() && (resource.data.organizerId == request.auth.uid || isAdmin());
+      
+      match /staff/{uid} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() && (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
+      }
+      
+      match /partners/{partnerId} {
+        allow read: if true;
+        allow write: if isSignedIn() && (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
+      }
+
+      match /announcements/{announcementId} {
+        allow read: if isSignedIn() && (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
+        allow write: if isSignedIn() && (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
+      }
+
+      match /waitlist/{entryId} {
+        allow read: if isSignedIn() && (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
+        allow write: if isSignedIn() && (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
+      }
+
+      match /results/{resultId} {
+        allow read: if isSignedIn();
+        allow create: if isChair() || isOrganizer() || isAdmin() || (isSignedIn() && get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid);
+        allow update: if isSignedIn() && (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin() || isChair());
+      }
+    }
+
+    // Applications
+    match /applications/{appId} {
+      allow read: if isSignedIn() && (
+        request.auth.uid == resource.data.userId ||
+        isOrganizer() ||
+        isChair() ||
+        isAdmin() ||
+        (get(/databases/$(database)/documents/events/$(resource.data.eventId)).data.organizerId == request.auth.uid)
+      );
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && (
+        request.auth.uid == resource.data.userId ||
+        isOrganizer() ||
+        isAdmin() ||
+        (get(/databases/$(database)/documents/events/$(resource.data.eventId)).data.organizerId == request.auth.uid)
+      );
+    }
+
+    // Articles
+    match /articles/{articleId} {
+      allow read: if resource.data.published == true || isAdmin() || (isSignedIn() && request.auth.uid == resource.data.authorId);
+      allow create: if isSignedIn();
+      allow update, delete: if isSignedIn() && (request.auth.uid == resource.data.authorId || isAdmin());
+
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if isSignedIn();
+        allow delete: if isSignedIn() && (request.auth.uid == resource.data.authorId || isAdmin());
+      }
+    }
+
+    // Conversations (messaging)
+    match /conversations/{convId} {
+      allow read: if isSignedIn() && request.auth.uid in resource.data.participants;
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && request.auth.uid in resource.data.participants;
+
+      match /messages/{msgId} {
+        allow read: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participants;
+        allow create: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participants;
+      }
+    }
+
+    // Activities
+    match /activities/{activityId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update, delete: if isAdmin();
+    }
+
+    // Markings
+    match /markings/{markingId} {
+      allow read: if isSignedIn() && (
+        request.auth.uid == resource.data.delegateId ||
+        isChair() ||
+        isOrganizer() ||
+        isAdmin()
+      );
+      allow create, update: if isChair() || isOrganizer() || isAdmin();
+    }
+
+    // Complaints
+    match /complaints/{complaintId} {
+      allow read: if isSignedIn() && (
+        request.auth.uid == resource.data.userId ||
+        isChair() ||
+        isOrganizer() ||
+        isAdmin()
+      );
+      allow create: if isSignedIn();
+      allow update: if isOrganizer() || isAdmin();
+    }
+  }
+}
