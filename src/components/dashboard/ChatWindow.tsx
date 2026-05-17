@@ -6,33 +6,62 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MoreVertical, Send } from "lucide-react";
 import { motion } from "framer-motion";
-import { getConversationMessages, sendMessage, markConversationRead, MessageData } from "@/lib/services/messageService";
-import { format } from "date-fns";
+import { getConversationMessagesRealtime, sendMessage, markConversationRead, MessageData, ConversationData } from "@/lib/services/messageService";
+import { format, formatDistanceToNow } from "date-fns";
+import { Check, CheckCheck, Clock } from "lucide-react";
+import { subscribeToPresence, PresenceData } from "@/lib/services/presenceService";
 
 interface ChatWindowProps {
   conversationId: string | null;
   conversationName: string;
   uid: string;
   userName: string;
+  initialConvData?: Partial<ConversationData>;
 }
 
-export function ChatWindow({ conversationId, conversationName, uid, userName }: ChatWindowProps) {
+export function ChatWindow({ conversationId, conversationName, uid, userName, initialConvData }: ChatWindowProps) {
   const [messages, setMessages] = useState<MessageData[]>([]);
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  
+  const [presence, setPresence] = useState<PresenceData | null>(null);
+
+  const [limitCount, setLimitCount] = useState(50);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!conversationId) {
       setMessages([]);
+      setPresence(null);
       return;
     }
+    
+    // Extract otherUid if direct
+    const uids = conversationId.split("_");
+    let unsubPresence = () => {};
+    if (uids.length === 2 && !initialConvData?.type || initialConvData?.type === "direct") {
+      const otherUid = uids[0] === uid ? uids[1] : uids[0];
+      unsubPresence = subscribeToPresence(otherUid, data => setPresence(data));
+    } else {
+      setPresence(null);
+    }
+
     markConversationRead(conversationId, uid).catch(() => {});
-    const unsub = getConversationMessages(conversationId, msgs => {
+    const unsub = getConversationMessagesRealtime(conversationId, limitCount, msgs => {
       setMessages(msgs);
     });
-    return unsub;
-  }, [conversationId, uid]);
+    return () => {
+      unsub();
+      unsubPresence();
+    };
+  }, [conversationId, uid, limitCount, initialConvData]);
+
+  function handleScroll(e: React.UIEvent<HTMLDivElement>) {
+    if (e.currentTarget.scrollTop === 0) {
+      setLimitCount(prev => prev + 50);
+    }
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -43,7 +72,24 @@ export function ChatWindow({ conversationId, conversationName, uid, userName }: 
     setSending(true);
     const text = inputText.trim();
     setInputText("");
-    await sendMessage(conversationId, uid, userName, text);
+    
+    // Optimistic UI
+    const tempMsg: MessageData = {
+      id: "temp_" + Date.now(),
+      senderId: uid,
+      senderName: userName,
+      text,
+      readBy: [],
+      status: "sending"
+    };
+    setMessages(prev => [...prev, tempMsg]);
+
+    try {
+      await sendMessage(conversationId, uid, userName, text, initialConvData);
+    } catch (err) {
+      console.error(err);
+      // We could mark tempMsg as failed here
+    }
     setSending(false);
   }
 
@@ -87,13 +133,27 @@ export function ChatWindow({ conversationId, conversationName, uid, userName }: 
       {/* Header */}
       <div className="h-16 border-b border-border/40 px-6 flex items-center justify-between bg-background/40 backdrop-blur-xl shrink-0 z-10">
         <div className="flex items-center gap-3">
-          <Avatar className="w-10 h-10 border border-border/50">
-            <AvatarFallback className="bg-primary/20 text-primary">
-              {getInitials(conversationName)}
-            </AvatarFallback>
-          </Avatar>
+          <div className="relative">
+            <Avatar className="w-10 h-10 border border-border/50">
+              <AvatarFallback className="bg-primary/20 text-primary">
+                {getInitials(conversationName)}
+              </AvatarFallback>
+            </Avatar>
+            {presence?.state === "online" && (
+              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-green-500 border-2 border-background rounded-full" />
+            )}
+          </div>
           <div>
-            <h2 className="font-semibold text-foreground">{conversationName}</h2>
+            <h2 className="font-semibold text-foreground leading-tight">{conversationName}</h2>
+            {presence && (
+              <p className="text-[11px] text-muted-foreground">
+                {presence.state === "online" ? (
+                  <span className="text-green-500 font-medium">Online</span>
+                ) : presence.lastChangedAt ? (
+                  `Active ${formatDistanceToNow(presence.lastChangedAt.toDate(), { addSuffix: true })}`
+                ) : "Offline"}
+              </p>
+            )}
           </div>
         </div>
         <Button variant="ghost" size="icon" className="text-muted-foreground hover:text-foreground">
@@ -102,14 +162,29 @@ export function ChatWindow({ conversationId, conversationName, uid, userName }: 
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+      <div 
+        className="flex-1 overflow-y-auto p-6 space-y-4"
+        onScroll={handleScroll}
+      >
         {messages.length === 0 ? (
           <div className="text-center text-muted-foreground text-sm py-8">
             No messages yet. Say hello!
           </div>
         ) : (
           messages.map((msg, index) => {
+            if (msg.systemMessage) {
+              return (
+                <div key={msg.id} className="text-center my-4">
+                  <span className="text-xs text-muted-foreground bg-background/50 px-3 py-1 rounded-full border border-border/30">
+                    {msg.text}
+                  </span>
+                </div>
+              );
+            }
+
             const isMe = msg.senderId === uid;
+            const isLastOfMine = isMe && index === messages.findLastIndex(m => m.senderId === uid);
+            
             return (
               <motion.div
                 key={msg.id}
@@ -137,7 +212,15 @@ export function ChatWindow({ conversationId, conversationName, uid, userName }: 
                     }`}>
                       <p className="text-sm leading-relaxed">{msg.text}</p>
                     </div>
-                    <span className="text-[10px] text-muted-foreground mt-1 mx-1">{formatTime(msg)}</span>
+                    <div className="flex items-center gap-1 mt-1 mx-1">
+                      <span className="text-[10px] text-muted-foreground">{formatTime(msg)}</span>
+                      {isLastOfMine && msg.status === "sending" && <Clock className="w-3 h-3 text-muted-foreground/70" />}
+                      {isLastOfMine && msg.status !== "sending" && (
+                        msg.readBy && msg.readBy.some(id => id !== uid) 
+                          ? <CheckCheck className="w-3 h-3 text-blue-400" />
+                          : <Check className="w-3 h-3 text-muted-foreground/70" />
+                      )}
+                    </div>
                   </div>
                 </div>
               </motion.div>

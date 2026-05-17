@@ -17,16 +17,17 @@ export interface Applicant {
 interface CountryAssignmentRowProps {
   applicant: Applicant;
   availableCountries: string[];
+  conflicts?: Record<string, string>; // country -> conflict warning
   onAssign: (applicantId: string, country: string) => void;
 }
 
-export function CountryAssignmentRow({ applicant, availableCountries, onAssign }: CountryAssignmentRowProps) {
+export function CountryAssignmentRow({ applicant, availableCountries, conflicts, onAssign }: CountryAssignmentRowProps) {
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 border rounded-lg hover:bg-slate-50 dark:hover:bg-slate-900/50 transition-colors gap-4">
       <div className="flex-1">
         <div className="flex items-center gap-2">
           <h4 className="font-semibold">{applicant.name}</h4>
-          {applicant.conflictWarning && (
+          {applicant.assignedCountry && conflicts?.[applicant.assignedCountry] && (
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
@@ -35,12 +36,12 @@ export function CountryAssignmentRow({ applicant, availableCountries, onAssign }
                   </Badge>
                 </TooltipTrigger>
                 <TooltipContent>
-                  <p>{applicant.conflictWarning}</p>
+                  <p>{conflicts[applicant.assignedCountry]}</p>
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
           )}
-          {applicant.assignedCountry && !applicant.conflictWarning && (
+          {applicant.assignedCountry && (!conflicts || !conflicts[applicant.assignedCountry]) && (
             <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
               <CheckCircle2 className="w-3 h-3 mr-1" /> Assigned
             </Badge>
@@ -61,14 +62,31 @@ export function CountryAssignmentRow({ applicant, availableCountries, onAssign }
           value={applicant.assignedCountry ?? "unassigned"} 
           onValueChange={(val) => { if (val !== null) onAssign(applicant.id, val); }}
         >
-          <SelectTrigger className={applicant.conflictWarning ? "border-amber-300 ring-amber-100" : ""}>
+          <SelectTrigger className={applicant.assignedCountry && conflicts?.[applicant.assignedCountry] ? "border-amber-300 ring-amber-100" : ""}>
             <SelectValue placeholder="Assign Country" />
           </SelectTrigger>
           <SelectContent>
             <SelectItem value="unassigned" className="text-muted-foreground italic">Unassigned</SelectItem>
-            {availableCountries.map(country => (
-              <SelectItem key={country} value={country}>{country}</SelectItem>
-            ))}
+            {availableCountries.map(country => {
+              const conflictMsg = conflicts?.[country];
+              return (
+                <SelectItem key={country} value={country}>
+                  <div className="flex items-center justify-between w-full pr-2">
+                    <span>{country}</span>
+                    {conflictMsg && (
+                       <TooltipProvider>
+                         <Tooltip>
+                           <TooltipTrigger>
+                             <span className="text-amber-500 ml-2" title={conflictMsg}>🟡</span>
+                           </TooltipTrigger>
+                           <TooltipContent><p>{conflictMsg}</p></TooltipContent>
+                         </Tooltip>
+                       </TooltipProvider>
+                    )}
+                  </div>
+                </SelectItem>
+              );
+            })}
           </SelectContent>
         </Select>
       </div>

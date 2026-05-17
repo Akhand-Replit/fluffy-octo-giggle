@@ -23,65 +23,160 @@ service cloud.firestore {
     }
 
     function isOrganizer() {
-      return isSignedIn() && userDocExists() && (getUserData().role == 'Organizer' || getUserData().role == 'organizer');
+      return isSignedIn() && userDocExists() &&
+        (getUserData().role == 'Organizer' || getUserData().role == 'organizer');
     }
 
     function isChair() {
-      return isSignedIn() && userDocExists() && (getUserData().role == 'Chair' || getUserData().role == 'chair');
+      return isSignedIn() && userDocExists() &&
+        (getUserData().role == 'Chair' || getUserData().role == 'chair');
     }
 
     function isAdmin() {
-      return isSignedIn() && userDocExists() && (getUserData().role == 'App Admin' || getUserData().role == 'admin' || getUserData().isAdmin == true);
+      return isSignedIn() && userDocExists() &&
+        (getUserData().role == 'App Admin' || getUserData().role == 'admin' || getUserData().isAdmin == true);
     }
 
-    // User Profiles
-    match /users/{userId} {
+    function isEventOrganizer(eventId) {
+      return isSignedIn() &&
+        get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid;
+    }
+
+    match /{path=**}/results/{resultId} {
       allow read: if isSignedIn();
+    }
+
+    // ── User Profiles ──────────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read: if isSignedIn() && (
+        request.auth.uid == userId ||
+        !('privacySettings' in resource.data) ||
+        !('showProfile' in resource.data.privacySettings) ||
+        resource.data.privacySettings.showProfile != false
+      );
       allow create: if isSignedIn() && request.auth.uid == userId;
       allow update: if request.auth.uid == userId || isAdmin();
       allow delete: if isAdmin();
+
+      match /blocks/{blockedUid} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
+
+      match /connections/{otherUid} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
     }
 
-    // Pro Applications
+    // ── Pro Applications ───────────────────────────────────────────────────────
     match /proApplications/{userId} {
       allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
       allow write: if isSignedIn() && (request.auth.uid == userId || isAdmin());
     }
 
-    // Events
+    // ── Events ────────────────────────────────────────────────────────────────
     match /events/{eventId} {
       allow read: if true;
-      allow create: if isOrganizer() || isAdmin() || (isSignedIn() && request.resource.data.organizerId == request.auth.uid);
-      allow update, delete: if isSignedIn() && (resource.data.organizerId == request.auth.uid || isAdmin());
-      
+      allow create: if isOrganizer() || isAdmin() ||
+        (isSignedIn() && request.resource.data.organizerId == request.auth.uid);
+      allow update, delete: if isSignedIn() &&
+        (resource.data.organizerId == request.auth.uid || isAdmin());
+
       match /staff/{uid} {
         allow read: if isSignedIn();
-        allow write: if isSignedIn() && (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
-      }
-      
-      match /partners/{partnerId} {
-        allow read: if true;
-        allow write: if isSignedIn() && (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
+        allow write: if isSignedIn() &&
+          (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
       }
 
+      match /partners/{partnerId} {
+        allow read: if true;
+        allow write: if isSignedIn() &&
+          (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
+      }
+
+      // Announcements — delegates can read sent/queued announcements
       match /announcements/{announcementId} {
-        allow read: if isSignedIn() && (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
-        allow write: if isSignedIn() && (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() &&
+          (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
       }
 
       match /waitlist/{entryId} {
-        allow read: if isSignedIn() && (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
-        allow write: if isSignedIn() && (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
+        allow read: if isSignedIn() &&
+          (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
+        allow write: if isSignedIn() &&
+          (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
       }
 
       match /results/{resultId} {
         allow read: if isSignedIn();
-        allow create: if isChair() || isOrganizer() || isAdmin() || (isSignedIn() && get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid);
-        allow update: if isSignedIn() && (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin() || isChair());
+        allow create: if isChair() || isOrganizer() || isAdmin() ||
+          (isSignedIn() && get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid);
+        allow update: if isSignedIn() &&
+          (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin() || isChair());
+      }
+
+      // Food slots — organizer writes, signed-in reads
+      match /foodSlots/{slotId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() &&
+          (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
+      }
+
+      // Transport routes — organizer writes, signed-in reads; delegates can self-register
+      match /transportRoutes/{routeId} {
+        allow read: if isSignedIn();
+        allow create, delete: if isSignedIn() &&
+          (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
+        allow update: if isSignedIn();
+      }
+
+      // Accommodation blocks — organizer writes, signed-in reads
+      match /accommodationBlocks/{blockId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() &&
+          (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
+      }
+
+      // Accommodation requests — delegate creates/reads own, organizer manages all
+      match /accommodationRequests/{reqId} {
+        allow read: if isSignedIn() && (
+          resource.data.delegateUid == request.auth.uid ||
+          get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid ||
+          isAdmin()
+        );
+        allow create: if isSignedIn();
+        allow update: if isSignedIn() && (
+          get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin()
+        );
+      }
+
+      // Live sessions — organizer writes, signed-in reads
+      match /liveSessions/{sessionId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() &&
+          (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid || isAdmin());
+      }
+
+      // Study guides — chair or organizer writes, delegates read
+      match /studyGuides/{committeeName} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn() &&
+          (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid ||
+           isChair() || isAdmin());
+      }
+
+      // Committee notifications (room alerts) — chair writes, delegates read
+      match /committees/{committeeId}/notifications/{notifId} {
+        allow read: if isSignedIn();
+        allow create: if isSignedIn() && (isChair() || isOrganizer() || isAdmin() ||
+          get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid);
+        allow delete: if isSignedIn() &&
+          (get(/databases/$(database)/documents/events/$(eventId)).data.organizerId == request.auth.uid ||
+           isChair() || isAdmin());
       }
     }
 
-    // Applications
+    // ── Applications ──────────────────────────────────────────────────────────
     match /applications/{appId} {
       allow read: if isSignedIn() && (
         request.auth.uid == resource.data.userId ||
@@ -99,39 +194,50 @@ service cloud.firestore {
       );
     }
 
-    // Articles
+    // ── Articles ──────────────────────────────────────────────────────────────
     match /articles/{articleId} {
-      allow read: if resource.data.published == true || isAdmin() || (isSignedIn() && request.auth.uid == resource.data.authorId);
+      allow read: if resource.data.published == true || isAdmin() ||
+        (isSignedIn() && request.auth.uid == resource.data.authorId);
       allow create: if isSignedIn();
-      allow update, delete: if isSignedIn() && (request.auth.uid == resource.data.authorId || isAdmin());
+      allow update, delete: if isSignedIn() &&
+        (request.auth.uid == resource.data.authorId || isAdmin());
 
       match /comments/{commentId} {
         allow read: if true;
         allow create: if isSignedIn();
-        allow delete: if isSignedIn() && (request.auth.uid == resource.data.authorId || isAdmin());
+        allow delete: if isSignedIn() &&
+          (request.auth.uid == resource.data.authorId || isAdmin());
       }
     }
 
-    // Conversations (messaging)
+    // ── Conversations ─────────────────────────────────────────────────────────
     match /conversations/{convId} {
       allow read: if isSignedIn() && request.auth.uid in resource.data.participants;
       allow create: if isSignedIn();
       allow update: if isSignedIn() && request.auth.uid in resource.data.participants;
 
       match /messages/{msgId} {
-        allow read: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participants;
-        allow create: if isSignedIn() && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participants;
+        allow read: if isSignedIn() &&
+          request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participants;
+        allow create: if isSignedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.participants
+          && request.resource.data.senderId == request.auth.uid
+          && (!('blockedBy' in get(/databases/$(database)/documents/conversations/$(convId)).data) ||
+              !(request.auth.uid in get(/databases/$(database)/documents/conversations/$(convId)).data.blockedBy));
       }
     }
 
-    // Activities
+    // ── Activities ────────────────────────────────────────────────────────────
     match /activities/{activityId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
+      allow read: if isSignedIn() && (
+        resource.data.isPublic == true ||
+        resource.data.userId == request.auth.uid
+      );
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       allow update, delete: if isAdmin();
     }
 
-    // Markings
+    // ── Markings ──────────────────────────────────────────────────────────────
     match /markings/{markingId} {
       allow read: if isSignedIn() && (
         request.auth.uid == resource.data.delegateId ||
@@ -142,16 +248,22 @@ service cloud.firestore {
       allow create, update: if isChair() || isOrganizer() || isAdmin();
     }
 
-    // Complaints
+    // ── Complaints (with escalation hierarchy) ────────────────────────────────
     match /complaints/{complaintId} {
       allow read: if isSignedIn() && (
         request.auth.uid == resource.data.userId ||
+        request.auth.uid == resource.data.assignedTo ||
         isChair() ||
         isOrganizer() ||
         isAdmin()
       );
       allow create: if isSignedIn();
-      allow update: if isOrganizer() || isAdmin();
+      // Delegate can update their own (e.g. addendum); chair/organizer/admin can update escalation
+      allow update: if isSignedIn() && (
+        request.auth.uid == resource.data.assignedTo ||
+        isOrganizer() ||
+        isAdmin()
+      );
     }
   }
 }

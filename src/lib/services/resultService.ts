@@ -1,5 +1,5 @@
 import {
-  collection, doc, getDocs, addDoc, updateDoc, serverTimestamp, query, where, writeBatch
+  collection, doc, getDocs, addDoc, updateDoc, serverTimestamp, query, where, writeBatch, collectionGroup
 } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 
@@ -28,6 +28,17 @@ export async function getEventResults(eventId: string): Promise<DelegateResult[]
     return snap.docs.map(d => ({ id: d.id, ...d.data() } as DelegateResult));
   } catch (error) {
     console.error("Error fetching results:", error);
+    return [];
+  }
+}
+
+export async function getUserAchievements(uid: string): Promise<DelegateResult[]> {
+  try {
+    const q = query(collectionGroup(db, "results"), where("delegateUid", "==", uid), where("status", "==", "approved"));
+    const snap = await getDocs(q);
+    return snap.docs.map(d => ({ id: d.id, ...d.data() } as DelegateResult)).filter(r => r.awardType && r.awardType !== "none");
+  } catch (error) {
+    console.error("Error fetching user achievements:", error);
     return [];
   }
 }

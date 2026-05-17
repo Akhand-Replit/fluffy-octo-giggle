@@ -8,14 +8,16 @@ export interface AssignmentSuggestion {
   reason: string;
 }
 
+import { checkConflict, ConflictRecord } from "./conflictService";
+
 /**
- * Heuristic-based AI assignment suggestion logic.
- * In the future, this can be upgraded to use LLMs (OpenAI/Ollama).
+ * Heuristic-based AI assignment suggestion logic with conflict checking.
  */
-export function suggestCountryAssignments(
+export async function suggestCountryAssignments(
   applications: ApplicationData[],
-  committee: Committee
-): AssignmentSuggestion[] {
+  committee: Committee,
+  eventId: string
+): Promise<AssignmentSuggestion[]> {
   // 1. Get only approved applications for this committee
   const validApps = applications.filter(app => 
     app.status === "approved" && 
@@ -32,28 +34,42 @@ export function suggestCountryAssignments(
 
   // 3. Simple heuristic: match choices first, then experience length
   // Sort by experience length (proxy for complexity)
-  const sortedApps = [...unassignedApps].sort((a, b) => b.experience.length - a.experience.length);
+  const sortedApps = [...unassignedApps].sort((a, b) => (b.experience?.length || 0) - (a.experience?.length || 0));
 
-  sortedApps.forEach(app => {
-    if (availableCountries.length === 0) return;
+  for (const app of sortedApps) {
+    if (availableCountries.length === 0) break;
 
     let countryToAssign = "";
     let reason = "";
 
-    // Check if primary choice is available
-    if (availableCountries.includes(app.choices.primary.country)) {
-      countryToAssign = app.choices.primary.country;
-      reason = "Matched primary choice";
-    } 
-    // Check if secondary choice is available
-    else if (availableCountries.includes(app.choices.secondary.country)) {
-      countryToAssign = app.choices.secondary.country;
-      reason = "Matched secondary choice";
+    const candidateCountries = [app.choices.primary.country, app.choices.secondary.country, ...availableCountries];
+    let conflict: ConflictRecord | null = null;
+    let foundSafe = false;
+
+    for (const candidate of candidateCountries) {
+      if (!availableCountries.includes(candidate)) continue;
+      
+      const potentialConflict = await checkConflict(app.userId, candidate, eventId);
+      if (potentialConflict) {
+        if (!conflict) conflict = potentialConflict; // Save first conflict as fallback if no safe country found
+        continue;
+      }
+      
+      countryToAssign = candidate;
+      if (candidate === app.choices.primary.country) reason = "Matched primary choice";
+      else if (candidate === app.choices.secondary.country) reason = "Matched secondary choice";
+      else reason = "Auto-assigned based on availability and experience";
+      foundSafe = true;
+      break;
     }
-    // Otherwise, assign any available country
-    else {
+
+    if (!foundSafe && conflict && availableCountries.includes(conflict.country)) {
+      countryToAssign = conflict.country;
+      reason = `No conflict-free option available; reusing ${conflict.country} last held at ${conflict.eventName}.`;
+    } else if (!foundSafe && availableCountries.length > 0) {
+      // should only happen if somehow all countries conflict, just pick first
       countryToAssign = availableCountries[0];
-      reason = "Auto-assigned based on availability and experience";
+      reason = "Assigned despite conflicts (no better options)";
     }
 
     if (countryToAssign) {
@@ -67,7 +83,7 @@ export function suggestCountryAssignments(
       const index = availableCountries.indexOf(countryToAssign);
       if (index > -1) availableCountries.splice(index, 1);
     }
-  });
+  }
 
   return suggestions;
 }

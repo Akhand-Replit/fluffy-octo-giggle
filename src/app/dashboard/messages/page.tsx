@@ -10,15 +10,17 @@ export default function MessagesPage() {
   const { user, profile } = useAuth();
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [selectedChatName, setSelectedChatName] = useState<string>("");
+  const [tempConvData, setTempConvData] = useState<any>(undefined);
 
   if (!user) return null;
 
   const userName = profile?.displayName || user.displayName || user.email || "Me";
   const userPhoto = user.photoURL || undefined;
 
-  function handleSelect(id: string, name: string) {
+  function handleSelect(id: string, name: string, temp?: any) {
     setSelectedChatId(id);
     setSelectedChatName(name);
+    setTempConvData(temp);
   }
 
   return (
@@ -44,6 +46,7 @@ export default function MessagesPage() {
           conversationName={selectedChatName}
           uid={user.uid}
           userName={userName}
+          initialConvData={tempConvData}
         />
       </div>
     </motion.div>

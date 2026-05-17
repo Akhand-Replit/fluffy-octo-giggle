@@ -13,6 +13,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getEventById, Committee } from '@/lib/services/eventService';
 import { getApplicationsByEvent, updateApplication, ApplicationData } from '@/lib/services/applicationService';
 import { suggestCountryAssignments, applyAIAssignments } from '@/lib/services/aiAssignmentService';
+import { batchCheckConflicts, ConflictRecord } from '@/lib/services/conflictService';
 
 export default function CountryManagementPage() {
   const params = useParams();
@@ -26,7 +27,10 @@ export default function CountryManagementPage() {
   const [activeCommittee, setActiveCommittee] = useState('');
   const [loading, setLoading] = useState(true);
   const [isAiLoading, setIsAiLoading] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(24 * 60 * 60);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [assignmentStatus, setAssignmentStatus] = useState<string>("pending");
+  const [assignmentMode, setAssignmentMode] = useState<string>("manual");
+  const [conflictsMap, setConflictsMap] = useState<Map<string, ConflictRecord>>(new Map());
 
   useEffect(() => {
     const timer = setInterval(() => setTimeLeft(prev => (prev > 0 ? prev - 1 : 0)), 1000);
@@ -44,6 +48,15 @@ export default function CountryManagementPage() {
       const approved = apps.filter(a => a.status === 'approved');
       setAllApplications(apps);
       setCommittees(event.committees ?? []);
+      setAssignmentStatus(event.assignmentStatus ?? "pending");
+      setAssignmentMode(event.countryAssignmentMode ?? "manual");
+      
+      if (event.assignmentDeadline) {
+         const deadlineMs = event.assignmentDeadline.toDate ? event.assignmentDeadline.toDate().getTime() : new Date(event.assignmentDeadline).getTime();
+         setTimeLeft(Math.max(0, Math.floor((deadlineMs - Date.now()) / 1000)));
+      } else {
+         setTimeLeft(24 * 60 * 60); // Default fallback
+      }
 
       const map: Record<string, Applicant[]> = {};
       for (const c of event.committees ?? []) {
@@ -69,6 +82,18 @@ export default function CountryManagementPage() {
     }
     load();
   }, [eventId]);
+
+  useEffect(() => {
+    if (!activeCommittee || committees.length === 0 || loading) return;
+    async function checkCurrentCommitteeConflicts() {
+       const committeeApps = applicants[activeCommittee] ?? [];
+       const committee = committees.find(c => c.name === activeCommittee);
+       if (!committee || committeeApps.length === 0) return;
+       const results = await batchCheckConflicts(committeeApps, committee.countries ?? [], eventId);
+       setConflictsMap(results);
+    }
+    checkCurrentCommitteeConflicts();
+  }, [activeCommittee, applicants, committees, eventId, loading]);
 
   const formatTime = (seconds: number) => {
     const h = Math.floor(seconds / 3600);
@@ -104,7 +129,7 @@ export default function CountryManagementPage() {
     setIsAiLoading(true);
     const committee = committees.find(c => c.name === activeCommittee);
     if (!committee) { setIsAiLoading(false); return; }
-    const suggestions = suggestCountryAssignments(allApplications, committee);
+    const suggestions = await suggestCountryAssignments(allApplications, committee, eventId);
     await applyAIAssignments(suggestions);
     setApplicants(prev => {
       const updated = { ...prev };
@@ -141,10 +166,32 @@ export default function CountryManagementPage() {
           <Clock className="w-5 h-5 text-violet-600" />
           <div>
             <p className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Assignment Deadline</p>
-            <p className="font-mono text-lg font-bold text-slate-900 dark:text-slate-100">{formatTime(timeLeft)}</p>
+            <p className="font-mono text-lg font-bold text-slate-900 dark:text-slate-100">
+               {assignmentStatus === 'auto_assigned' ? 'COMPLETED' : formatTime(timeLeft)}
+            </p>
           </div>
         </div>
       </div>
+      
+      {timeLeft > 0 && timeLeft <= 3600 && assignmentStatus !== 'auto_assigned' && (
+         <div className="bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-300 p-4 rounded-lg border border-red-200 dark:border-red-900 flex items-start gap-3">
+           <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+           <div className="text-sm">
+             <p className="font-semibold mb-1">1 hour until {assignmentMode === 'ai' ? 'AI auto-assigns' : 'deadline'}</p>
+             <p>Please lock in any manual assignments before the deadline.</p>
+           </div>
+         </div>
+      )}
+      
+      {timeLeft === 0 && assignmentStatus !== 'auto_assigned' && assignmentMode === 'ai' && (
+         <div className="bg-amber-50 text-amber-800 p-4 rounded-lg border border-amber-200 flex items-start gap-3">
+           <Bot className="w-5 h-5 shrink-0 mt-0.5" />
+           <div className="text-sm">
+             <p className="font-semibold mb-1">AI Assignment in progress...</p>
+             <p>Manual edits are temporarily disabled.</p>
+           </div>
+         </div>
+      )}
 
       {committees.length === 0 ? (
         <Card>
@@ -169,11 +216,11 @@ export default function CountryManagementPage() {
                 </CardDescription>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={handleAutoAssign} disabled={isAiLoading || unassignedCount === 0} className="gap-2">
+                <Button variant="outline" onClick={handleAutoAssign} disabled={isAiLoading || unassignedCount === 0 || (timeLeft === 0 && assignmentMode === 'ai')} className="gap-2">
                   {isAiLoading ? <Clock className="w-4 h-4 animate-spin" /> : <Bot className="w-4 h-4 text-violet-600" />}
                   AI Auto-Assign
                 </Button>
-                <Button onClick={handleSave} className="bg-violet-600 hover:bg-violet-700 text-white gap-2">
+                <Button onClick={handleSave} disabled={timeLeft === 0 && assignmentMode === 'ai'} className="bg-violet-600 hover:bg-violet-700 text-white gap-2">
                   <Save className="w-4 h-4" /> Save
                 </Button>
               </div>
@@ -204,14 +251,26 @@ export default function CountryManagementPage() {
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {(applicants[c.name] ?? []).map(app => (
-                        <CountryAssignmentRow
-                          key={app.id}
-                          applicant={app}
-                          availableCountries={c.countries ?? []}
-                          onAssign={handleAssign}
-                        />
-                      ))}
+                      {(applicants[c.name] ?? []).map(app => {
+                        const appConflicts: Record<string, string> = {};
+                        (c.countries ?? []).forEach(country => {
+                           const key = `${app.id}_${country}`;
+                           if (conflictsMap.has(key)) {
+                             const conf = conflictsMap.get(key)!;
+                             appConflicts[country] = `Held at ${conf.eventName} on ${conf.date}`;
+                           }
+                        });
+
+                        return (
+                          <CountryAssignmentRow
+                            key={app.id}
+                            applicant={app}
+                            availableCountries={c.countries ?? []}
+                            conflicts={appConflicts}
+                            onAssign={handleAssign}
+                          />
+                        );
+                      })}
                     </div>
                   )}
                 </TabsContent>

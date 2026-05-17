@@ -197,12 +197,16 @@ export function ApplicationWizard({ event, userId }: ApplicationWizardProps) {
                     { id: "Observer", desc: "Attend to watch and learn without voting rights." }
                   ].map((role) => (
                     <div key={role.id}>
-                      <RadioGroupItem value={role.id} id={role.id} className="peer sr-only" />
+                      <RadioGroupItem value={role.id} id={role.id} className="sr-only" />
                       <Label
                         htmlFor={role.id}
-                        className="flex flex-col items-center justify-between rounded-xl border-2 border-muted bg-popover p-6 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary peer-data-[state=checked]:bg-primary/5 cursor-pointer transition-all"
+                        className={`flex flex-col items-center justify-between rounded-xl border-2 p-6 cursor-pointer transition-all ${
+                          formData.role === role.id 
+                            ? "border-primary bg-primary/10 shadow-lg shadow-primary/20 scale-[1.02]"
+                            : "border-muted bg-popover hover:bg-accent hover:text-accent-foreground hover:border-primary/50"
+                        }`}
                       >
-                        <span className="text-lg font-semibold mb-2">{role.id}</span>
+                        <span className={`text-lg font-semibold mb-2 ${formData.role === role.id ? "text-primary" : ""}`}>{role.id}</span>
                         <span className="text-sm text-center text-muted-foreground">{role.desc}</span>
                       </Label>
                     </div>

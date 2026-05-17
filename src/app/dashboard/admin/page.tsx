@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { collection, getDocs, query, where, doc, deleteDoc, updateDoc } from "firebase/firestore";
+import { collection, getDocs, query, where, doc, deleteDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { getAllUsers, updateUserRole, UserProfile } from "@/lib/services/userService";
 import { getAllEvents, EventData } from "@/lib/services/eventService";
@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Users, Calendar, ShieldAlert, TrendingUp, MoreVertical,
-  Settings, Activity, Globe2, Trash2, UserCog, Loader2
+  Settings, Activity, Globe2, Trash2, UserCog, Loader2, CheckCircle, XCircle
 } from "lucide-react";
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem,
@@ -33,9 +33,11 @@ export default function AppAdminDashboard() {
   const [activities, setActivities] = useState<ActivityData[]>([]);
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [events, setEvents] = useState<EventData[]>([]);
+  const [organizerApps, setOrganizerApps] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [usersLoading, setUsersLoading] = useState(false);
   const [eventsLoading, setEventsLoading] = useState(false);
+  const [appsLoading, setAppsLoading] = useState(false);
 
   // Role change dialog
   const [roleDialog, setRoleDialog] = useState<{ open: boolean; user: UserProfile | null; newRole: string }>({
@@ -64,7 +66,7 @@ export default function AppAdminDashboard() {
           users: usersSnap.size,
           events: publishedEventsSnap.size,
           applications: appsSnap.size,
-          revenue: appsSnap.docs.filter(d => d.data().status === "approved").length * 50,
+          revenue: appsSnap.docs.filter((d: any) => d.data().status === "approved").length * 50,
         });
         setActivities(recentActs);
       } catch (error) {
@@ -90,6 +92,52 @@ export default function AppAdminDashboard() {
     const data = await getAllEvents();
     setEvents(data);
     setEventsLoading(false);
+  }
+
+  async function loadOrganizerApps() {
+    if (organizerApps.length > 0) return;
+    setAppsLoading(true);
+    try {
+      const snap = await getDocs(query(collection(db, "organizerApplications"), where("status", "==", "pending")));
+      setOrganizerApps(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    } catch (error) {
+      console.error("Error loading apps:", error);
+    } finally {
+      setAppsLoading(false);
+    }
+  }
+
+  async function handleApproveOrganizer(appId: string, uid: string) {
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, "users", uid), {
+        role: "Organizer",
+        organizerApplicationStatus: "approved"
+      });
+      batch.update(doc(db, "organizerApplications", appId), {
+        status: "approved"
+      });
+      await batch.commit();
+      setOrganizerApps(prev => prev.filter(app => app.id !== appId));
+    } catch (error) {
+      console.error("Error approving organizer:", error);
+    }
+  }
+
+  async function handleRejectOrganizer(appId: string, uid: string) {
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, "users", uid), {
+        organizerApplicationStatus: "rejected"
+      });
+      batch.update(doc(db, "organizerApplications", appId), {
+        status: "rejected"
+      });
+      await batch.commit();
+      setOrganizerApps(prev => prev.filter(app => app.id !== appId));
+    } catch (error) {
+      console.error("Error rejecting organizer:", error);
+    }
   }
 
   async function applyRoleChange() {
@@ -177,6 +225,9 @@ export default function AppAdminDashboard() {
           </TabsTrigger>
           <TabsTrigger value="users" className="rounded-xl py-2 px-5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground gap-2" onClick={loadUsers}>
             <Users className="w-4 h-4" /> Users
+          </TabsTrigger>
+          <TabsTrigger value="organizer-apps" className="rounded-xl py-2 px-5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground gap-2" onClick={loadOrganizerApps}>
+            <ShieldAlert className="w-4 h-4" /> Organizer Applications
           </TabsTrigger>
         </TabsList>
 
@@ -365,6 +416,71 @@ export default function AppAdminDashboard() {
                 </table>
                 {users.length === 0 && (
                   <div className="py-16 text-center text-muted-foreground text-sm">No users found.</div>
+                )}
+              </div>
+            )}
+          </Card>
+        </TabsContent>
+
+        {/* ORGANIZER APPLICATIONS MANAGEMENT */}
+        <TabsContent value="organizer-apps" className="mt-0">
+          <Card className="glass-card overflow-hidden">
+            <CardHeader>
+              <CardTitle>Organizer Applications</CardTitle>
+              <CardDescription>Review and approve new organizer requests.</CardDescription>
+            </CardHeader>
+            {appsLoading ? (
+              <CardContent><Skeleton className="h-48 w-full rounded-xl" /></CardContent>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-secondary/10 text-xs uppercase tracking-wider text-muted-foreground border-b border-border/50">
+                    <tr>
+                      <th className="px-6 py-4">Applicant</th>
+                      <th className="px-6 py-4">Organization</th>
+                      <th className="px-6 py-4">Experience</th>
+                      <th className="px-6 py-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/40">
+                    {organizerApps.map(app => (
+                      <tr key={app.id} className="hover:bg-secondary/5 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium">{app.displayName || "—"}</span>
+                            <span className="text-xs text-muted-foreground">{app.email}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm font-medium">{app.organization}</td>
+                        <td className="px-6 py-4 text-sm text-muted-foreground max-w-xs truncate">
+                          {app.experience}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-green-500 border-green-500/20 hover:bg-green-500/10 hover:text-green-600"
+                              onClick={() => handleApproveOrganizer(app.id, app.uid)}
+                            >
+                              <CheckCircle className="w-4 h-4 mr-1" /> Approve
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-destructive border-destructive/20 hover:bg-destructive/10 hover:text-destructive"
+                              onClick={() => handleRejectOrganizer(app.id, app.uid)}
+                            >
+                              <XCircle className="w-4 h-4 mr-1" /> Reject
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {organizerApps.length === 0 && (
+                  <div className="py-16 text-center text-muted-foreground text-sm">No pending organizer applications.</div>
                 )}
               </div>
             )}

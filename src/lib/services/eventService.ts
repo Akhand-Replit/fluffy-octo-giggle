@@ -23,6 +23,12 @@ export interface ScheduleItem {
   description?: string;
 }
 
+export interface MarkingTemplate {
+  id: string;
+  name: string;
+  maxScore: number;
+}
+
 export interface EventData {
   id: string;
   title: string;
@@ -46,6 +52,16 @@ export interface EventData {
   certificateTemplate?: string;
   countryAssignmentMode?: "manual" | "ai";
   optionalModules?: string[];
+  markingTemplates?: MarkingTemplate[];
+  
+  // Assignment Tracking
+  assignmentDeadline?: string | any;
+  assignmentStatus?: "pending" | "in_progress" | "completed" | "auto_assigned" | "overdue";
+  deadlineRemindersSent?: Record<string, any>;
+  
+  // Audit
+  lastEditedAt?: string | any;
+  lastEditedBy?: string;
 }
 
 export async function getEventById(eventId: string): Promise<EventData | null> {
@@ -58,6 +74,29 @@ export async function getEventById(eventId: string): Promise<EventData | null> {
   } catch (error) {
     console.error("Error fetching event:", error);
     return null;
+  }
+}
+
+export async function getEventsByIds(eventIds: string[]): Promise<EventData[]> {
+  if (!eventIds || eventIds.length === 0) return [];
+  const uniqueIds = Array.from(new Set(eventIds));
+  const chunks = [];
+  for (let i = 0; i < uniqueIds.length; i += 30) {
+    chunks.push(uniqueIds.slice(i, i + 30));
+  }
+  
+  try {
+    const results = await Promise.all(
+      chunks.map(async chunk => {
+        const q = query(collection(db, "events"), where("__name__", "in", chunk));
+        const snap = await getDocs(q);
+        return snap.docs.map(d => ({ id: d.id, ...d.data() } as EventData));
+      })
+    );
+    return results.flat();
+  } catch (error) {
+    console.error("Error fetching events by ids:", error);
+    return [];
   }
 }
 

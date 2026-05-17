@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import { User, onAuthStateChanged, signInWithPopup, GoogleAuthProvider, signOut as firebaseSignOut } from "firebase/auth";
 import { auth, db } from "@/lib/firebase/client";
 import { doc, getDoc } from "firebase/firestore";
+import { initPresence } from "@/lib/services/presenceService";
 
 interface AuthContextType {
   user: User | null;
@@ -52,8 +53,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
       
+      let cleanupPresence = () => {};
+      
       if (currentUser) {
         await fetchProfile(currentUser.uid);
+        cleanupPresence = initPresence(currentUser.uid);
       } else {
         setProfile(null);
       }
@@ -82,7 +86,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
 
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+    };
   }, []);
 
   const signInWithGoogle = async () => {

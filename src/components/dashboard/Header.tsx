@@ -129,7 +129,10 @@ export function Header() {
               <DropdownMenuLabel>My Account</DropdownMenuLabel>
               <DropdownMenuSeparator className="bg-border/50" />
               <DropdownMenuItem render={<Link href="/dashboard/profile" />}>
-                Profile Settings
+                Profile
+              </DropdownMenuItem>
+              <DropdownMenuItem render={<Link href="/dashboard/settings" />}>
+                Settings
               </DropdownMenuItem>
               <DropdownMenuItem>Support</DropdownMenuItem>
               <DropdownMenuSeparator className="bg-border/50" />

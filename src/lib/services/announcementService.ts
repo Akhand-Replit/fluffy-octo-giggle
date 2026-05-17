@@ -14,11 +14,15 @@ export interface Announcement {
   subject: string;
   body: string;
   audience: AudienceFilter;
-  status: "draft" | "queued" | "sent" | "failed";
+  status: "draft" | "queued" | "sending" | "sent" | "partial" | "failed";
   sentBy: string;
   recipientCount: number;
   createdAt?: any;
   sentAt?: any;
+  deliveryStats?: {
+    sent: number;
+    failed: number;
+  };
 }
 
 export async function getAnnouncements(eventId: string): Promise<Announcement[]> {
@@ -31,6 +35,16 @@ export async function getAnnouncements(eventId: string): Promise<Announcement[]>
     console.error("Error fetching announcements:", error);
     return [];
   }
+}
+
+import { onSnapshot } from "firebase/firestore";
+
+export function subscribeAnnouncements(eventId: string, callback: (announcements: Announcement[]) => void) {
+  const q = query(collection(db, "events", eventId, "announcements"), orderBy("createdAt", "desc"));
+  return onSnapshot(q, (snap) => {
+    const data = snap.docs.map(d => ({ id: d.id, ...d.data() } as Announcement));
+    callback(data);
+  });
 }
 
 export async function saveAnnouncement(

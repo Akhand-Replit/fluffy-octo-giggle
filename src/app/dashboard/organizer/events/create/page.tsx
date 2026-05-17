@@ -1,9 +1,10 @@
 "use client";
 
 import { useAuth } from "@/contexts/AuthContext";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { createEvent, EventData, Committee, TicketingTier, ScheduleItem } from "@/lib/services/eventService";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useState, useEffect } from "react";
+import { createEvent, updateEvent, getEventById, EventData, Committee, TicketingTier, ScheduleItem, MarkingTemplate } from "@/lib/services/eventService";
+import { getApplicationsByEvent } from "@/lib/services/applicationService";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -21,8 +22,13 @@ const SCHEDULE_TYPES = ["main", "session", "break", "social"] as const;
 export default function CreateEventPage() {
   const { user } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const editId = searchParams?.get("edit");
+  const isEditMode = !!editId;
+
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState("basic");
+  const [totalApplications, setTotalApplications] = useState<any[]>([]);
 
   const [basicInfo, setBasicInfo] = useState({
     title: "", date: "", location: "", format: "offline", description: "", coverUrl: "",
@@ -46,8 +52,51 @@ export default function CreateEventPage() {
     optionalModules: [] as string[]
   });
 
+  const [markingTemplates, setMarkingTemplates] = useState<MarkingTemplate[]>([
+    { id: "debate", name: "Debate Performance", maxScore: 40 },
+    { id: "positionPaper", name: "Position Paper", maxScore: 30 },
+    { id: "diplomacy", name: "Diplomacy & Lobbying", maxScore: 30 },
+  ]);
+
   // Auto-save debouncer
   const [saveTimeout, setSaveTimeout] = useState<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    async function fetchEvent() {
+      if (!isEditMode || !user) return;
+      const eventData = await getEventById(editId);
+      if (!eventData || eventData.organizerId !== user.uid) {
+        alert("You cannot edit this event.");
+        router.push("/dashboard/organizer/events");
+        return;
+      }
+      
+      const apps = await getApplicationsByEvent(editId);
+      setTotalApplications(apps);
+
+      setBasicInfo({
+        title: eventData.title || "",
+        date: eventData.date || "",
+        location: eventData.location || "",
+        format: eventData.format || "offline",
+        description: eventData.description || "",
+        coverUrl: eventData.coverUrl || "",
+      });
+      if (eventData.committees) setCommittees(eventData.committees);
+      if (eventData.executiveBoard) setExecutiveBoard(eventData.executiveBoard);
+      if (eventData.ticketingTiers) setTicketingTiers(eventData.ticketingTiers);
+      if (eventData.schedule) setSchedule(eventData.schedule);
+      setSettings({
+        theme: eventData.theme || "classic-blue",
+        countryAssignmentMode: eventData.countryAssignmentMode || "manual",
+        optionalModules: eventData.optionalModules || []
+      });
+      if (eventData.markingTemplates) {
+         setMarkingTemplates(eventData.markingTemplates);
+      }
+    }
+    fetchEvent();
+  }, [isEditMode, editId, user, router]);
 
   const triggerAutoSave = () => {
     if (saveTimeout) clearTimeout(saveTimeout);
@@ -103,15 +152,25 @@ export default function CreateEventPage() {
         alert("Please ensure all committees have a name and capacity > 0.");
         return;
       }
+      if (isEditMode) {
+         // Invariants
+         for (const committee of committees) {
+           const filledSeats = totalApplications.filter(a => a.status === "approved" && a.assignedCommittee === committee.name).length;
+           if ((committee.capacity ?? 0) < filledSeats) {
+             alert(`Cannot reduce capacity of ${committee.name} below ${filledSeats} (approved delegates).`);
+             return;
+           }
+         }
+      }
     }
 
     setLoading(true);
     try {
       const totalCap = ticketingTiers.reduce((acc, tier) => acc + tier.capacity, 0);
-      const eventData: Omit<EventData, "id"> = {
+      const payload: Partial<EventData> = {
         ...basicInfo,
+        coverUrl: basicInfo.coverUrl,
         committees,
-        organizerId: user.uid,
         status,
         ticketingTiers,
         totalCapacity: totalCap,
@@ -119,13 +178,23 @@ export default function CreateEventPage() {
         executiveBoard,
         theme: settings.theme,
         countryAssignmentMode: settings.countryAssignmentMode,
-        optionalModules: settings.optionalModules
+        optionalModules: settings.optionalModules,
+        markingTemplates
       };
-      await createEvent(eventData);
-      router.push("/dashboard/organizer/events");
+
+      if (isEditMode) {
+        payload.lastEditedAt = new Date() as any;
+        payload.lastEditedBy = user.uid;
+        await updateEvent(editId, payload);
+      } else {
+        payload.organizerId = user.uid;
+        await createEvent(payload as Omit<EventData, "id">);
+      }
+      
+      router.push(`/dashboard/organizer/events/${isEditMode ? editId : ""}`);
     } catch (error) {
-      console.error("Failed to create event:", error);
-      alert("Failed to create event. Please try again.");
+      console.error("Failed to save event:", error);
+      alert("Failed to save event. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -133,10 +202,16 @@ export default function CreateEventPage() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      {isEditMode && (
+        <div className="bg-primary/10 border border-primary/20 p-4 rounded-xl flex items-center justify-between">
+          <p className="font-medium text-primary">Editing Event: {basicInfo.title || "..."}</p>
+          <Button variant="outline" onClick={() => router.push(`/dashboard/organizer/events/${editId}`)}>Discard Changes</Button>
+        </div>
+      )}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Create New Event</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{isEditMode ? "Edit Event" : "Create New Event"}</h1>
         <p className="text-muted-foreground mt-1">
-          Set up a new Model UN conference, configure committees, schedule, and ticketing.
+          {isEditMode ? "Update your Model UN conference details and settings." : "Set up a new Model UN conference, configure committees, schedule, and ticketing."}
         </p>
       </div>
 
@@ -465,6 +540,46 @@ export default function CreateEventPage() {
               </div>
 
               <div className="space-y-4 border-t pt-6">
+                <h3 className="text-lg font-medium">Marking Templates</h3>
+                <p className="text-sm text-muted-foreground">Define the grading criteria that chairs will use to evaluate delegates.</p>
+                <div className="space-y-4">
+                  {markingTemplates.map((template, idx) => (
+                    <div key={idx} className="flex gap-4 items-center">
+                      <Input 
+                        placeholder="Template Name (e.g. Debate)" 
+                        value={template.name}
+                        onChange={(e) => {
+                          const newTemplates = [...markingTemplates];
+                          newTemplates[idx].name = e.target.value;
+                          newTemplates[idx].id = e.target.value.toLowerCase().replace(/[^a-z0-9]/g, '');
+                          setMarkingTemplates(newTemplates);
+                        }}
+                      />
+                      <Input 
+                        type="number"
+                        placeholder="Max Score" 
+                        value={template.maxScore || ""}
+                        className="w-32"
+                        onChange={(e) => {
+                          const newTemplates = [...markingTemplates];
+                          newTemplates[idx].maxScore = parseInt(e.target.value) || 0;
+                          setMarkingTemplates(newTemplates);
+                        }}
+                      />
+                      <Button variant="ghost" size="icon" className="text-destructive" onClick={() => {
+                        setMarkingTemplates(markingTemplates.filter((_, i) => i !== idx));
+                      }}>
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                  <Button variant="outline" size="sm" onClick={() => setMarkingTemplates([...markingTemplates, { id: "", name: "", maxScore: 10 }])}>
+                    <PlusCircle className="w-4 h-4 mr-2" /> Add Criterion
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-4 border-t pt-6">
                 <h3 className="text-lg font-medium">Optional Modules</h3>
                 <div className="flex items-center justify-between p-4 border rounded-lg bg-card">
                   <div>
@@ -490,7 +605,7 @@ export default function CreateEventPage() {
               <div className="flex gap-4">
                 <Button variant="outline" onClick={() => handleSubmit("draft")} disabled={loading}>Save as Draft</Button>
                 <Button onClick={() => handleSubmit("published")} disabled={loading} className="bg-gradient-to-r from-violet-600 to-indigo-600 text-white">
-                  {loading ? "Publishing..." : "Publish Event"}
+                  {loading ? "Saving..." : (isEditMode ? "Save Changes" : "Publish Event")}
                 </Button>
               </div>
             </CardFooter>

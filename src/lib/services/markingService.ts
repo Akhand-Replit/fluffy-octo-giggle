@@ -7,12 +7,8 @@ export interface Marking {
   committeeId: string;
   delegateId: string; // The userId of the delegate
   applicationId: string;
-  scores: {
-    debate: number;
-    positionPaper: number;
-    diplomacy: number;
-    total: number;
-  };
+  dateStr?: string; // YYYY-MM-DD for daily marking
+  scores: Record<string, number>; // templateId -> score
   feedback: string;
   gradedBy: string; // The userId of the chair
   createdAt?: any;
@@ -66,5 +62,42 @@ export async function getDelegateMarking(applicationId: string, delegateId?: str
   } catch (error) {
     console.error("Error fetching delegate marking:", error);
     return null;
+  }
+}
+
+export async function getDailyMarkings(eventId: string, committeeId: string, dateStr: string): Promise<Marking[]> {
+  try {
+    const markingsRef = collection(db, "markings");
+    const q = query(
+      markingsRef,
+      where("eventId", "==", eventId),
+      where("committeeId", "==", committeeId),
+      where("dateStr", "==", dateStr)
+    );
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as unknown as Marking));
+  } catch (error) {
+    console.error("Error fetching daily markings:", error);
+    return [];
+  }
+}
+
+import { setDoc } from "firebase/firestore";
+
+export async function saveDailyMarking(marking: Omit<Marking, "id">): Promise<{ success: boolean; id?: string; error?: any }> {
+  try {
+    // Generate deterministic ID based on committee, delegate, and date
+    const markingId = `${marking.committeeId}_${marking.delegateId}_${marking.dateStr}`;
+    const docRef = doc(db, "markings", markingId);
+    
+    await setDoc(docRef, {
+      ...marking,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+    
+    return { success: true, id: markingId };
+  } catch (error) {
+    console.error("Error saving daily marking:", error);
+    return { success: false, error };
   }
 }

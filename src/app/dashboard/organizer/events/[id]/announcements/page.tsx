@@ -10,7 +10,7 @@ import { AnnouncementComposer } from '@/components/features/organizer/Announceme
 import { Mail, Plus, History, CheckCircle2, Clock, Eye, Trash2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import {
-  getAnnouncements, saveAnnouncement, deleteAnnouncement, Announcement,
+  getAnnouncements, subscribeAnnouncements, saveAnnouncement, deleteAnnouncement, Announcement,
 } from '@/lib/services/announcementService';
 
 export default function AnnouncementsPage() {
@@ -23,10 +23,11 @@ export default function AnnouncementsPage() {
   const [isComposing, setIsComposing] = useState(false);
 
   useEffect(() => {
-    getAnnouncements(eventId).then(list => {
+    const unsubscribe = subscribeAnnouncements(eventId, (list) => {
       setAnnouncements(list);
       setLoading(false);
     });
+    return () => unsubscribe();
   }, [eventId]);
 
   const handleSend = async (data: any) => {
@@ -121,10 +122,23 @@ export default function AnnouncementsPage() {
                     <div className="space-y-1">
                       <div className="flex items-center gap-2">
                         <h4 className="font-semibold">{ann.subject}</h4>
-                        {ann.status === 'queued' || ann.status === 'sent' ? (
+                        {ann.status === 'sent' && (
                           <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200"><CheckCircle2 className="w-3 h-3 mr-1" /> Sent</Badge>
-                        ) : (
-                          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200"><Clock className="w-3 h-3 mr-1" /> Draft</Badge>
+                        )}
+                        {ann.status === 'sending' && (
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200"><Clock className="w-3 h-3 mr-1 animate-spin" /> Sending...</Badge>
+                        )}
+                        {ann.status === 'queued' && (
+                          <Badge variant="outline" className="bg-blue-50 text-blue-700 border-blue-200"><Clock className="w-3 h-3 mr-1" /> Queued</Badge>
+                        )}
+                        {ann.status === 'failed' && (
+                          <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">Failed</Badge>
+                        )}
+                        {ann.status === 'partial' && (
+                          <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">Partial Delivery</Badge>
+                        )}
+                        {ann.status === 'draft' && (
+                          <Badge variant="outline" className="bg-slate-50 text-slate-700 border-slate-200"><Clock className="w-3 h-3 mr-1" /> Draft</Badge>
                         )}
                       </div>
                       <div className="text-sm text-muted-foreground flex items-center gap-4">
@@ -142,9 +156,14 @@ export default function AnnouncementsPage() {
                           </Button>
                         </>
                       )}
-                      {(ann.status === 'queued' || ann.status === 'sent') && (
-                        <span className="text-muted-foreground text-xs">
-                          {ann.sentAt ? new Date(ann.sentAt).toLocaleString() : '—'}
+                      {['queued', 'sending', 'sent', 'partial', 'failed'].includes(ann.status) && (
+                        <span className="text-muted-foreground text-xs flex flex-col text-right">
+                          <span>{ann.sentAt ? new Date(ann.sentAt.toDate ? ann.sentAt.toDate() : ann.sentAt).toLocaleString() : '—'}</span>
+                          {ann.deliveryStats && (
+                             <span className="text-[10px] mt-0.5">
+                               {ann.deliveryStats.sent} sent, {ann.deliveryStats.failed} failed
+                             </span>
+                          )}
                         </span>
                       )}
                       <Button variant="ghost" size="icon">
