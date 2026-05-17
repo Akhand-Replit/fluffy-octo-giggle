@@ -7,10 +7,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { UploadCloud, FileText, CheckCircle2, Loader2, ExternalLink } from "lucide-react";
+import { UploadCloud, FileText, CheckCircle2, Loader2, ExternalLink, AlertTriangle, Clock } from "lucide-react";
 import { storage, db } from "@/lib/firebase/client";
 import { ref, uploadBytesResumable, getDownloadURL } from "firebase/storage";
 import { doc, updateDoc } from "firebase/firestore";
+import { getDelegateMarking } from "@/lib/services/markingService";
+import { useEffect } from "react";
 
 interface PositionPaperUploadProps {
   application: ApplicationData;
@@ -22,8 +24,19 @@ export function PositionPaperUpload({ application, event }: PositionPaperUploadP
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [marking, setMarking] = useState<any>(null);
 
   const existingPaperUrl = (application as any).positionPaperUrl;
+
+  useEffect(() => {
+    async function loadMarking() {
+      if (existingPaperUrl) {
+        const m = await getDelegateMarking((application as any).id, application.userId);
+        setMarking(m);
+      }
+    }
+    loadMarking();
+  }, [application, existingPaperUrl]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -94,13 +107,67 @@ export function PositionPaperUpload({ application, event }: PositionPaperUploadP
       <CardContent className="pt-8">
         {existingPaperUrl ? (
           <div className="flex flex-col items-center justify-center py-10 space-y-6">
-            <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center">
-              <CheckCircle2 className="w-10 h-10 text-green-500" />
-            </div>
-            <div className="text-center space-y-2">
-              <h3 className="text-xl font-semibold">Paper Uploaded Successfully</h3>
-              <p className="text-muted-foreground">Your position paper is under review by the Chairs.</p>
-            </div>
+            
+            {marking?.paperStatus === "approved" ? (
+              <div className="flex flex-col items-center justify-center space-y-4">
+                <div className="w-20 h-20 bg-green-500/10 rounded-full flex items-center justify-center">
+                  <CheckCircle2 className="w-10 h-10 text-green-500" />
+                </div>
+                <div className="text-center space-y-1">
+                  <h3 className="text-xl font-semibold text-green-600">Paper Approved</h3>
+                  <p className="text-sm text-muted-foreground">Your position paper has been reviewed and approved by the Chairs.</p>
+                </div>
+                {marking?.feedback && (
+                  <div className="bg-secondary/10 p-4 rounded-xl text-sm border border-border/50 max-w-md w-full text-center">
+                    <p className="font-semibold mb-1">Chair Feedback:</p>
+                    <p className="text-muted-foreground italic">"{marking.feedback}"</p>
+                  </div>
+                )}
+              </div>
+            ) : marking?.paperStatus === "revision" ? (
+              <div className="flex flex-col items-center justify-center space-y-4">
+                <div className="w-20 h-20 bg-yellow-500/10 rounded-full flex items-center justify-center">
+                  <AlertTriangle className="w-10 h-10 text-yellow-600" />
+                </div>
+                <div className="text-center space-y-1">
+                  <h3 className="text-xl font-semibold text-yellow-600">Revision Requested</h3>
+                  <p className="text-sm text-muted-foreground">The Chairs have requested changes to your position paper.</p>
+                </div>
+                {marking?.feedback && (
+                  <div className="bg-yellow-500/5 p-4 rounded-xl text-sm border border-yellow-500/20 max-w-md w-full text-center text-yellow-800 dark:text-yellow-200">
+                    <p className="font-semibold mb-1">Chair Feedback:</p>
+                    <p className="italic">"{marking.feedback}"</p>
+                  </div>
+                )}
+              </div>
+            ) : marking?.paperStatus === "flagged" ? (
+              <div className="flex flex-col items-center justify-center space-y-4">
+                <div className="w-20 h-20 bg-red-500/10 rounded-full flex items-center justify-center">
+                  <AlertTriangle className="w-10 h-10 text-red-500" />
+                </div>
+                <div className="text-center space-y-1">
+                  <h3 className="text-xl font-semibold text-red-500">Plagiarism Concern</h3>
+                  <p className="text-sm text-muted-foreground">Please review your paper and ensure all sources are properly cited.</p>
+                </div>
+                {marking?.feedback && (
+                  <div className="bg-red-500/5 p-4 rounded-xl text-sm border border-red-500/20 max-w-md w-full text-center text-red-800 dark:text-red-200">
+                    <p className="font-semibold mb-1">Chair Feedback:</p>
+                    <p className="italic">"{marking.feedback}"</p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center space-y-4">
+                <div className="w-20 h-20 bg-blue-500/10 rounded-full flex items-center justify-center">
+                  <Clock className="w-10 h-10 text-blue-500" />
+                </div>
+                <div className="text-center space-y-1">
+                  <h3 className="text-xl font-semibold">Under Review</h3>
+                  <p className="text-sm text-muted-foreground">Your position paper is currently being reviewed by the Chairs.</p>
+                </div>
+              </div>
+            )}
+
             <Button variant="outline" className="gap-2" onClick={() => window.open(existingPaperUrl, "_blank")}>
               View Document <ExternalLink className="w-4 h-4" />
             </Button>

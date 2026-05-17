@@ -114,7 +114,7 @@ export default function SchedulePage() {
                     </div>
                     <div className="space-y-2">
                       <Label>Type</Label>
-                      <Select value={item.type} onValueChange={(v) => handleChange(index, "type", v)}>
+                      <Select value={item.type} onValueChange={(v) => handleChange(index, "type", v ?? "session")}>
                         <SelectTrigger>
                           <SelectValue />
                         </SelectTrigger>

@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { collection, getDocs, query, where, doc, deleteDoc, updateDoc, writeBatch } from "firebase/firestore";
+import { collection, getDocs, getDoc, query, where, doc, deleteDoc, updateDoc, writeBatch } from "firebase/firestore";
 import { db } from "@/lib/firebase/client";
 import { getAllUsers, updateUserRole, UserProfile } from "@/lib/services/userService";
 import { getAllEvents, EventData } from "@/lib/services/eventService";
 import { getRecentActivities, ActivityData } from "@/lib/services/activityService";
+import { logAudit } from "@/lib/services/auditService";
+import Link from "next/link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +36,7 @@ export default function AppAdminDashboard() {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [events, setEvents] = useState<EventData[]>([]);
   const [organizerApps, setOrganizerApps] = useState<any[]>([]);
+  const [proApps, setProApps] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [usersLoading, setUsersLoading] = useState(false);
   const [eventsLoading, setEventsLoading] = useState(false);
@@ -50,6 +53,12 @@ export default function AppAdminDashboard() {
     open: false, eventId: "", title: "",
   });
   const [deletingEvent, setDeletingEvent] = useState(false);
+
+  // Extend Pro dialog
+  const [extendProDialog, setExtendProDialog] = useState<{ open: boolean; uid: string; email: string; months: string }>({
+    open: false, uid: "", email: "", months: "1"
+  });
+  const [extendingPro, setExtendingPro] = useState(false);
 
   useEffect(() => {
     async function fetchStats() {
@@ -95,11 +104,15 @@ export default function AppAdminDashboard() {
   }
 
   async function loadOrganizerApps() {
-    if (organizerApps.length > 0) return;
+    if (organizerApps.length > 0 && proApps.length > 0) return;
     setAppsLoading(true);
     try {
-      const snap = await getDocs(query(collection(db, "organizerApplications"), where("status", "==", "pending")));
-      setOrganizerApps(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      const [orgSnap, proSnap] = await Promise.all([
+        getDocs(query(collection(db, "organizerApplications"), where("status", "==", "pending"))),
+        getDocs(query(collection(db, "proApplications"), where("status", "==", "pending")))
+      ]);
+      setOrganizerApps(orgSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setProApps(proSnap.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (error) {
       console.error("Error loading apps:", error);
     } finally {
@@ -118,6 +131,17 @@ export default function AppAdminDashboard() {
         status: "approved"
       });
       await batch.commit();
+      
+      await logAudit({
+        actorUid: profile?.uid || "",
+        actorEmail: profile?.email || "",
+        actorRole: profile?.role || "",
+        action: "organizer_approved",
+        targetType: "user",
+        targetId: uid,
+        targetName: "Organizer Application",
+      });
+
       setOrganizerApps(prev => prev.filter(app => app.id !== appId));
     } catch (error) {
       console.error("Error approving organizer:", error);
@@ -134,16 +158,132 @@ export default function AppAdminDashboard() {
         status: "rejected"
       });
       await batch.commit();
+
+      await logAudit({
+        actorUid: profile?.uid || "",
+        actorEmail: profile?.email || "",
+        actorRole: profile?.role || "",
+        action: "organizer_rejected",
+        targetType: "user",
+        targetId: uid,
+        targetName: "Organizer Application",
+      });
+
       setOrganizerApps(prev => prev.filter(app => app.id !== appId));
     } catch (error) {
       console.error("Error rejecting organizer:", error);
     }
   }
 
+  async function handleApprovePro(appId: string, uid: string) {
+    try {
+      const batch = writeBatch(db);
+      const userRef = doc(db, "users", uid);
+      const userDoc = await getDoc(userRef);
+      const currentExpiry = userDoc.data()?.proExpiresAt?.toDate?.() || new Date();
+      const newExpiry = new Date(Math.max(Date.now(), currentExpiry.getTime()));
+      newExpiry.setMonth(newExpiry.getMonth() + 1); // standard 1 month
+
+      batch.update(userRef, {
+        proStatus: "active",
+        proActivatedAt: new Date(),
+        proExpiresAt: newExpiry
+      });
+      batch.update(doc(db, "proApplications", appId), {
+        status: "approved"
+      });
+      await batch.commit();
+
+      await logAudit({
+        actorUid: profile?.uid || "",
+        actorEmail: profile?.email || "",
+        actorRole: profile?.role || "",
+        action: "pro_approved",
+        targetType: "user",
+        targetId: uid,
+        targetName: "Pro Application",
+      });
+
+      setProApps(prev => prev.filter(app => app.id !== appId));
+    } catch (error) {
+      console.error("Error approving pro:", error);
+    }
+  }
+
+  async function handleRejectPro(appId: string, uid: string) {
+    try {
+      const batch = writeBatch(db);
+      batch.update(doc(db, "users", uid), { proStatus: "rejected" });
+      batch.update(doc(db, "proApplications", appId), { status: "rejected" });
+      await batch.commit();
+
+      await logAudit({
+        actorUid: profile?.uid || "",
+        actorEmail: profile?.email || "",
+        actorRole: profile?.role || "",
+        action: "pro_rejected",
+        targetType: "user",
+        targetId: uid,
+        targetName: "Pro Application",
+      });
+
+      setProApps(prev => prev.filter(app => app.id !== appId));
+    } catch (error) {
+      console.error("Error rejecting pro:", error);
+    }
+  }
+
+  async function applyProExtension() {
+    if (!extendProDialog.uid) return;
+    setExtendingPro(true);
+    
+    try {
+      const userRef = doc(db, "users", extendProDialog.uid);
+      const userDoc = await getDoc(userRef);
+      if (userDoc.exists()) {
+        const currentExpiry = userDoc.data().proExpiresAt?.toDate?.() || new Date();
+        const newExpiry = new Date(Math.max(Date.now(), currentExpiry.getTime()));
+        newExpiry.setMonth(newExpiry.getMonth() + parseInt(extendProDialog.months));
+        
+        await updateDoc(userRef, {
+          proStatus: "active",
+          proExpiresAt: newExpiry
+        });
+        
+        await logAudit({
+          actorUid: profile?.uid || "",
+          actorEmail: profile?.email || "",
+          actorRole: profile?.role || "",
+          action: "pro_extended_manual",
+          targetType: "user",
+          targetId: extendProDialog.uid,
+          targetName: extendProDialog.email,
+        });
+      }
+    } catch (error) {
+      console.error("Error extending pro:", error);
+    }
+
+    setExtendingPro(false);
+    setExtendProDialog({ open: false, uid: "", email: "", months: "1" });
+  }
+
   async function applyRoleChange() {
     if (!roleDialog.user || !roleDialog.newRole) return;
     setSavingRole(true);
     await updateUserRole(roleDialog.user.uid, roleDialog.newRole);
+    
+    await logAudit({
+      actorUid: profile?.uid || "",
+      actorEmail: profile?.email || "",
+      actorRole: profile?.role || "",
+      action: "role_changed",
+      targetType: "user",
+      targetId: roleDialog.user.uid,
+      targetName: roleDialog.user.email,
+      after: JSON.stringify({ role: roleDialog.newRole }),
+    });
+
     setUsers(prev => prev.map(u => u.uid === roleDialog.user!.uid ? { ...u, role: roleDialog.newRole } : u));
     setSavingRole(false);
     setRoleDialog({ open: false, user: null, newRole: "" });
@@ -153,6 +293,17 @@ export default function AppAdminDashboard() {
     if (!deleteDialog.eventId) return;
     setDeletingEvent(true);
     await deleteDoc(doc(db, "events", deleteDialog.eventId));
+    
+    await logAudit({
+      actorUid: profile?.uid || "",
+      actorEmail: profile?.email || "",
+      actorRole: profile?.role || "",
+      action: "event_deleted",
+      targetType: "event",
+      targetId: deleteDialog.eventId,
+      targetName: deleteDialog.title,
+    });
+
     setEvents(prev => prev.filter(e => e.id !== deleteDialog.eventId));
     setDeletingEvent(false);
     setDeleteDialog({ open: false, eventId: "", title: "" });
@@ -185,8 +336,12 @@ export default function AppAdminDashboard() {
           <p className="text-muted-foreground mt-1">Monitor platform activity, manage events and users.</p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline" className="gap-2"><Settings className="w-4 h-4" /> System Settings</Button>
-          <Button className="gap-2"><ShieldAlert className="w-4 h-4" /> Audit Logs</Button>
+          <Button render={<Link href="/dashboard/admin/settings"/>} nativeButton={false} variant="outline" className="gap-2">
+            <Settings className="w-4 h-4" /> System Settings
+          </Button>
+          <Button render={<Link href="/dashboard/admin/audit-logs"/>} nativeButton={false} className="gap-2">
+            <ShieldAlert className="w-4 h-4" /> Audit Logs
+          </Button>
         </div>
       </div>
 
@@ -409,6 +564,14 @@ export default function AppAdminDashboard() {
                           >
                             <UserCog className="w-3.5 h-3.5" /> Change Role
                           </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="gap-2 text-xs text-amber-600 hover:text-amber-700 hover:bg-amber-50"
+                            onClick={() => setExtendProDialog({ open: true, uid: u.uid, email: u.email, months: "1" })}
+                          >
+                            <ShieldAlert className="w-3.5 h-3.5" /> Extend Pro
+                          </Button>
                         </td>
                       </tr>
                     ))}
@@ -485,6 +648,72 @@ export default function AppAdminDashboard() {
               </div>
             )}
           </Card>
+
+          <Card className="glass-card overflow-hidden mt-8">
+            <CardHeader>
+              <CardTitle>Pro Applications</CardTitle>
+              <CardDescription>Review requests to upgrade or renew Pro membership.</CardDescription>
+            </CardHeader>
+            {appsLoading ? (
+              <CardContent><Skeleton className="h-48 w-full rounded-xl" /></CardContent>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-secondary/10 text-xs uppercase tracking-wider text-muted-foreground border-b border-border/50">
+                    <tr>
+                      <th className="px-6 py-4">Applicant</th>
+                      <th className="px-6 py-4">Type</th>
+                      <th className="px-6 py-4">Note</th>
+                      <th className="px-6 py-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/40">
+                    {proApps.map(app => (
+                      <tr key={app.id} className="hover:bg-secondary/5 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium">{app.displayName || "—"}</span>
+                            <span className="text-xs text-muted-foreground">{app.email}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <Badge variant={app.type === 'renewal' ? 'secondary' : 'default'} className="capitalize bg-amber-500/10 text-amber-600 border-amber-500/20">
+                            {app.type || 'new'}
+                          </Badge>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-muted-foreground max-w-xs truncate">
+                          {app.note || "—"}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-green-500 border-green-500/20 hover:bg-green-500/10 hover:text-green-600"
+                              onClick={() => handleApprovePro(app.id, app.uid)}
+                            >
+                              <CheckCircle className="w-4 h-4 mr-1" /> Approve
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-destructive border-destructive/20 hover:bg-destructive/10 hover:text-destructive"
+                              onClick={() => handleRejectPro(app.id, app.uid)}
+                            >
+                              <XCircle className="w-4 h-4 mr-1" /> Reject
+                            </Button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {proApps.length === 0 && (
+                  <div className="py-16 text-center text-muted-foreground text-sm">No pending pro applications.</div>
+                )}
+              </div>
+            )}
+          </Card>
         </TabsContent>
       </Tabs>
 
@@ -526,6 +755,33 @@ export default function AppAdminDashboard() {
             <Button variant="destructive" onClick={confirmDeleteEvent} disabled={deletingEvent}>
               {deletingEvent ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
               Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Extend Pro Dialog */}
+      <Dialog open={extendProDialog.open} onOpenChange={open => !open && setExtendProDialog(prev => ({ ...prev, open: false }))}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Extend Pro Membership</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <p className="text-sm text-muted-foreground">{extendProDialog.email}</p>
+            <Select value={extendProDialog.months} onValueChange={val => setExtendProDialog(prev => ({ ...prev, months: val ?? "1" }))}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">1 Month</SelectItem>
+                <SelectItem value="3">3 Months</SelectItem>
+                <SelectItem value="6">6 Months</SelectItem>
+                <SelectItem value="12">1 Year</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setExtendProDialog({ open: false, uid: "", email: "", months: "1" })}>Cancel</Button>
+            <Button onClick={applyProExtension} disabled={extendingPro} className="bg-amber-600 hover:bg-amber-700 text-white">
+              {extendingPro ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null} Extend
             </Button>
           </DialogFooter>
         </DialogContent>

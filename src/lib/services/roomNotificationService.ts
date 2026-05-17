@@ -22,6 +22,7 @@ export async function sendRoomNotification(
     createdBy: string;
   }
 ): Promise<{ success: boolean; error?: any }> {
+  if (!eventId || !committeeId) return { success: false, error: "Missing eventId or committeeId" };
   try {
     const expiresAt = Timestamp.fromDate(
       new Date(Date.now() + data.expiryMinutes * 60 * 1000)
@@ -45,6 +46,7 @@ export function subscribeRoomNotifications(
   committeeId: string,
   callback: (notifications: RoomNotification[]) => void
 ): () => void {
+  if (!eventId || !committeeId) { callback([]); return () => {}; }
   const now = Timestamp.now();
   const q = query(
     collection(db, "events", eventId, "committees", committeeId, "notifications"),

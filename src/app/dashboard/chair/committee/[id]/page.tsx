@@ -7,6 +7,7 @@ import { getEventById, EventData } from "@/lib/services/eventService";
 import { getApplicationsByEvent, ApplicationData } from "@/lib/services/applicationService";
 import { submitMarking, getMarkingsByCommittee, getDailyMarkings, saveDailyMarking, Marking } from "@/lib/services/markingService";
 import { getStudyGuide, saveStudyGuide, deleteStudyGuide, StudyGuide } from "@/lib/services/optionalModulesService";
+import { resolveComplaint as resolveComplaintService, escalateComplaint as escalateComplaintService } from "@/lib/services/complaintService";
 import { sendRoomNotification } from "@/lib/services/roomNotificationService";
 import { storage } from "@/lib/firebase/client";
 import { ref, uploadBytesResumable, getDownloadURL, deleteObject } from "firebase/storage";
@@ -33,6 +34,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { formatDistanceToNow } from "date-fns";
+import { PositionPaperViewer } from "@/components/features/chair/PositionPaperViewer";
 
 // ── Complaint types ───────────────────────────────────────────────────────────
 interface HistoryEntry {
@@ -104,6 +106,9 @@ export default function CommitteeManagementPage() {
     outstandingDelegate: "",
     honorableMention: ""
   });
+
+  // Paper Viewer
+  const [selectedPaperApp, setSelectedPaperApp] = useState<ApplicationData | null>(null);
 
   useEffect(() => {
     async function loadData() {
@@ -241,6 +246,8 @@ export default function CommitteeManagementPage() {
   // ── Complaint actions ──────────────────────────────────────────────────────
   const resolveComplaint = async (complaint: Complaint) => {
     const resolution = resolutionText[complaint.id] || "";
+    await resolveComplaintService(complaint.id, resolution, user!.uid, "chair");
+    
     const entry: HistoryEntry = {
       action: "resolved",
       actorUid: user!.uid,
@@ -248,19 +255,15 @@ export default function CommitteeManagementPage() {
       message: resolution || "Resolved by chair.",
       timestamp: new Date().toISOString(),
     };
-    await updateDoc(doc(db, "complaints", complaint.id), {
-      status: "resolved",
-      resolution,
-      history: arrayUnion(entry),
-    });
+    
     setComplaints(prev => prev.map(c =>
       c.id === complaint.id ? { ...c, status: "resolved", resolution, history: [...(c.history || []), entry] } : c
     ));
   };
 
   const escalateComplaint = async (complaint: Complaint) => {
-    // Find organizer uid from event
-    const organizerUid = (event as any)?.organizerId || null;
+    await escalateComplaintService(complaint.id, complaint.escalationLevel, "Escalated to organizer.", user!.uid, "chair");
+    
     const entry: HistoryEntry = {
       action: "escalated",
       actorUid: user!.uid,
@@ -268,17 +271,10 @@ export default function CommitteeManagementPage() {
       message: "Escalated to organizer.",
       timestamp: new Date().toISOString(),
     };
-    await updateDoc(doc(db, "complaints", complaint.id), {
-      status: "escalated",
-      escalationLevel: 1,
-      assignedTo: organizerUid,
-      assignedRole: "organizer",
-      escalatedAt: serverTimestamp(),
-      history: arrayUnion(entry),
-    });
+    
     setComplaints(prev => prev.map(c =>
       c.id === complaint.id
-        ? { ...c, status: "escalated", escalationLevel: 1, history: [...(c.history || []), entry] }
+        ? { ...c, status: "escalated", escalationLevel: complaint.escalationLevel + 1, history: [...(c.history || []), entry] }
         : c
     ));
   };
@@ -331,6 +327,21 @@ export default function CommitteeManagementPage() {
           </p>
         </div>
         <div className="flex gap-3 flex-wrap">
+          {/* Position Paper Viewer Dialog */}
+          <Dialog open={!!selectedPaperApp} onOpenChange={(open) => !open && setSelectedPaperApp(null)}>
+            <DialogContent className="max-w-[95vw] h-[95vh] p-0 border-0 bg-transparent shadow-none">
+              <DialogTitle className="sr-only">Position Paper Viewer</DialogTitle>
+              {selectedPaperApp && event && (
+                <PositionPaperViewer
+                  application={selectedPaperApp}
+                  event={event}
+                  committeeName={committeeName}
+                  onClose={() => setSelectedPaperApp(null)}
+                />
+              )}
+            </DialogContent>
+          </Dialog>
+
           {/* Study Guide */}
           <Dialog open={studyGuideDialogOpen} onOpenChange={setStudyGuideDialogOpen}>
             <DialogTrigger render={<Button variant="outline" className="gap-2"><BookOpen className="w-4 h-4" /> Study Guide</Button>} />
@@ -770,8 +781,8 @@ export default function CommitteeManagementPage() {
                             </div>
                           </div>
                           {paperUrl ? (
-                            <Button size="sm" variant="outline" className="gap-2" onClick={() => window.open(paperUrl, "_blank")}>
-                              <ExternalLink className="w-3.5 h-3.5" /> View
+                            <Button size="sm" variant="outline" className="gap-2" onClick={() => setSelectedPaperApp(delegate)}>
+                              <ExternalLink className="w-3.5 h-3.5" /> Grade
                             </Button>
                           ) : (
                             <span className="text-xs text-muted-foreground italic">Not submitted</span>

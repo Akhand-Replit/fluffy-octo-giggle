@@ -10,7 +10,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { EventData } from "@/lib/services/eventService";
-import { submitApplication, ApplicationData } from "@/lib/services/applicationService";
+import { submitApplication, submitTeamApplication, submitFacultyApplication, ApplicationData } from "@/lib/services/applicationService";
 import { logActivity } from "@/lib/services/activityService";
 import { useAuth } from "@/contexts/AuthContext";
 import { CheckCircle2, ChevronLeft, ChevronRight, Loader2 } from "lucide-react";
@@ -37,7 +37,14 @@ export function ApplicationWizard({ event, userId }: ApplicationWizardProps) {
       tertiary: { committee: "", country: "" },
     },
     experience: "",
-    motivation: ""
+    motivation: "",
+    institutionName: "",
+    studentsAccompanying: 0,
+    facultyPosition: "",
+    yearsTeaching: "",
+    teamSize: 3,
+    teamName: "",
+    teamMembers: [] as any[]
   });
 
   const updateFormData = (field: string, value: any) => {
@@ -60,7 +67,13 @@ export function ApplicationWizard({ event, userId }: ApplicationWizardProps) {
   const validateStep = () => {
     if (currentStep === 0) return !!formData.role;
     if (currentStep === 1) {
-      // At least primary choice must be fully filled
+      if (formData.role === "Faculty Advisor") {
+        return !!formData.institutionName && !!formData.facultyPosition && !!formData.yearsTeaching && formData.studentsAccompanying > 0;
+      }
+      if (formData.role === "Team Delegation Lead") {
+        return !!formData.institutionName && !!formData.teamName && formData.teamSize >= 3 && formData.teamSize <= 15 && !!formData.choices.primary.committee && !!formData.choices.primary.country;
+      }
+      // At least primary choice must be fully filled for standard roles
       return !!formData.choices.primary.committee && !!formData.choices.primary.country;
     }
     if (currentStep === 2) {
@@ -92,10 +105,28 @@ export function ApplicationWizard({ event, userId }: ApplicationWizardProps) {
       choices: formData.choices,
       experience: formData.experience,
       motivation: formData.motivation,
-      status: "pending"
+      status: "pending",
+      institutionName: formData.institutionName || undefined,
     };
 
-    const res = await submitApplication(payload);
+    let res;
+    if (formData.role === "Faculty Advisor") {
+      res = await submitFacultyApplication({
+        ...payload,
+        facultyPosition: formData.facultyPosition,
+        yearsTeaching: formData.yearsTeaching,
+        studentsAccompanying: formData.studentsAccompanying
+      });
+    } else if (formData.role === "Team Delegation Lead") {
+      res = await submitTeamApplication({
+        ...payload,
+        teamName: formData.teamName,
+        teamSize: formData.teamSize
+      }, formData.teamMembers);
+    } else {
+      res = await submitApplication(payload);
+    }
+
     setIsSubmitting(false);
 
     if (res.success) {
@@ -194,7 +225,9 @@ export function ApplicationWizard({ event, userId }: ApplicationWizardProps) {
                   {[
                     { id: "Delegate", desc: "Participate as a standard country representative." },
                     { id: "Head Delegate", desc: "Lead a delegation from your institution." },
-                    { id: "Observer", desc: "Attend to watch and learn without voting rights." }
+                    { id: "Observer", desc: "Attend to watch and learn without voting rights." },
+                    { id: "Faculty Advisor", desc: "Accompany and supervise a delegation from your institution. No country preferences required." },
+                    { id: "Team Delegation Lead", desc: "Apply as a group of 3-15 delegates from one institution; one application covers all." }
                   ].map((role) => (
                     <div key={role.id}>
                       <RadioGroupItem value={role.id} id={role.id} className="sr-only" />
@@ -217,77 +250,157 @@ export function ApplicationWizard({ event, userId }: ApplicationWizardProps) {
 
             {currentStep === 1 && (
               <div className="space-y-8">
-                {(["primary", "secondary", "tertiary"] as const).map((level, idx) => (
-                  <div key={level} className="space-y-4 p-5 rounded-xl border border-border/50 bg-secondary/5 relative">
-                    <div className="absolute top-0 left-0 w-1 h-full bg-primary/50 rounded-l-xl" />
-                    <h3 className="font-semibold text-lg capitalize">{level} Choice {idx === 0 && <span className="text-red-500">*</span>}</h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label>Committee</Label>
-                        <Select
-                          value={formData.choices[level].committee}
-                          onValueChange={(val) => {
-                            updateChoice(level, "committee", val || "");
-                            updateChoice(level, "country", ""); // Reset country when committee changes
-                          }}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a committee" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {event.committees && event.committees.length > 0 ? (
-                              event.committees.map(c => (
-                                <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>
-                              ))
-                            ) : (
-                              <SelectItem value="none" disabled>No committees available</SelectItem>
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                      <div className="space-y-2">
-                        <Label>Country</Label>
-                        <Select
-                          value={formData.choices[level].country}
-                          onValueChange={(val) => updateChoice(level, "country", val || "")}
-                          disabled={!formData.choices[level].committee}
-                        >
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select a country" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {getCountriesForCommittee(formData.choices[level].committee).length > 0 ? (
-                              getCountriesForCommittee(formData.choices[level].committee).map(country => (
-                                <SelectItem key={country} value={country}>{country}</SelectItem>
-                              ))
-                            ) : (
-                              <SelectItem value="any">Any Available Country</SelectItem>
-                            )}
-                          </SelectContent>
-                        </Select>
-                      </div>
+                {formData.role === "Faculty Advisor" ? (
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                      <Label>Institution Name <span className="text-red-500">*</span></Label>
+                      <input type="text" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" placeholder="e.g., Harvard University" value={formData.institutionName} onChange={(e) => updateFormData("institutionName", e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Students Accompanying <span className="text-red-500">*</span></Label>
+                      <input type="number" min="1" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" value={formData.studentsAccompanying || ""} onChange={(e) => updateFormData("studentsAccompanying", parseInt(e.target.value))} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Faculty Position <span className="text-red-500">*</span></Label>
+                      <input type="text" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" placeholder="e.g., History Teacher, Professor of Law" value={formData.facultyPosition} onChange={(e) => updateFormData("facultyPosition", e.target.value)} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Years Teaching MUN <span className="text-red-500">*</span></Label>
+                      <input type="text" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50" placeholder="e.g., 5 years" value={formData.yearsTeaching} onChange={(e) => updateFormData("yearsTeaching", e.target.value)} />
                     </div>
                   </div>
-                ))}
+                ) : (
+                  <>
+                    {formData.role === "Team Delegation Lead" && (
+                      <div className="space-y-6 mb-8 p-5 rounded-xl border border-border/50 bg-blue-500/5">
+                        <h3 className="font-semibold text-lg text-blue-600">Team Details</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Institution Name <span className="text-red-500">*</span></Label>
+                            <input type="text" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background" placeholder="e.g., Harvard University" value={formData.institutionName} onChange={(e) => updateFormData("institutionName", e.target.value)} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Team Name <span className="text-red-500">*</span></Label>
+                            <input type="text" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background" placeholder="e.g., Harvard A" value={formData.teamName} onChange={(e) => updateFormData("teamName", e.target.value)} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Team Size (3-15) <span className="text-red-500">*</span></Label>
+                            <input type="number" min="3" max="15" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background" value={formData.teamSize} onChange={(e) => updateFormData("teamSize", parseInt(e.target.value))} />
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Upload Team Members (CSV)</Label>
+                            <input type="file" accept=".csv" className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium" 
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  const reader = new FileReader();
+                                  reader.onload = (event) => {
+                                    const text = event.target?.result as string;
+                                    const lines = text.split('\n').slice(1); // skip header
+                                    const parsedMembers = lines.filter(l => l.trim()).map(line => {
+                                      const [name, email] = line.split(',');
+                                      return { name: name?.trim() || '', email: email?.trim() || '', choices: { primary: { committee: '', country: '' }, secondary: { committee: '', country: '' }, tertiary: { committee: '', country: '' } } };
+                                    });
+                                    updateFormData("teamMembers", parsedMembers);
+                                  };
+                                  reader.readAsText(file);
+                                }
+                              }}
+                            />
+                            <p className="text-xs text-muted-foreground">Format: name, email</p>
+                          </div>
+                        </div>
+                        {formData.teamMembers.length > 0 && (
+                          <div className="text-sm bg-green-500/10 text-green-600 p-2 rounded-md">
+                            Loaded {formData.teamMembers.length} team members from CSV.
+                          </div>
+                        )}
+                        <div className="mt-4 pt-4 border-t border-border/50">
+                          <h4 className="font-medium text-sm mb-2">Team Lead Choices (Your Choices)</h4>
+                        </div>
+                      </div>
+                    )}
+                    {(["primary", "secondary", "tertiary"] as const).map((level, idx) => (
+                      <div key={level} className="space-y-4 p-5 rounded-xl border border-border/50 bg-secondary/5 relative">
+                        <div className="absolute top-0 left-0 w-1 h-full bg-primary/50 rounded-l-xl" />
+                        <h3 className="font-semibold text-lg capitalize">{level} Choice {idx === 0 && <span className="text-red-500">*</span>}</h3>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label>Committee</Label>
+                            <Select
+                              value={formData.choices[level].committee}
+                              onValueChange={(val) => {
+                                updateChoice(level, "committee", val || "");
+                                updateChoice(level, "country", ""); // Reset country when committee changes
+                              }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select a committee" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {event.committees && event.committees.length > 0 ? (
+                                  event.committees.map(c => (
+                                    <SelectItem key={c.name} value={c.name}>{c.name}</SelectItem>
+                                  ))
+                                ) : (
+                                  <SelectItem value="none" disabled>No committees available</SelectItem>
+                                )}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-2">
+                            <Label>Country</Label>
+                            <Select
+                              value={formData.choices[level].country}
+                              onValueChange={(val) => updateChoice(level, "country", val || "")}
+                              disabled={!formData.choices[level].committee}
+                            >
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select a country" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {getCountriesForCommittee(formData.choices[level].committee).length > 0 ? (
+                                  getCountriesForCommittee(formData.choices[level].committee).map(country => (
+                                    <SelectItem key={country} value={country}>{country}</SelectItem>
+                                  ))
+                                ) : (
+                                  <SelectItem value="any">Any Available Country</SelectItem>
+                                )}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </>
+                )}
               </div>
             )}
 
             {currentStep === 2 && (
               <div className="space-y-6">
                 <div className="space-y-3">
-                  <Label htmlFor="experience" className="text-base">Previous MUN Experience <span className="text-red-500">*</span></Label>
-                  <p className="text-sm text-muted-foreground">Briefly list your previous conferences, roles, and any awards.</p>
+                  <Label htmlFor="experience" className="text-base">
+                    {formData.role === "Faculty Advisor" ? "Supervisor Experience" : "Previous MUN Experience"} <span className="text-red-500">*</span>
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {formData.role === "Faculty Advisor" ? "Briefly list your experience accompanying or supervising student groups." : "Briefly list your previous conferences, roles, and any awards."}
+                  </p>
                   <Textarea
                     id="experience"
-                    placeholder="e.g., Harvard MUN 2024 (Delegate of France, WHO) - Honorable Mention..."
+                    placeholder={formData.role === "Faculty Advisor" ? "e.g., Supervised Harvard MUN delegations in 2022 and 2023..." : "e.g., Harvard MUN 2024 (Delegate of France, WHO) - Honorable Mention..."}
                     className="min-h-[120px]"
                     value={formData.experience}
                     onChange={(e) => updateFormData("experience", e.target.value)}
                   />
                 </div>
                 <div className="space-y-3">
-                  <Label htmlFor="motivation" className="text-base">Motivation for Choices <span className="text-red-500">*</span></Label>
-                  <p className="text-sm text-muted-foreground">Why do you want to participate in this conference and represent your chosen countries?</p>
+                  <Label htmlFor="motivation" className="text-base">
+                    {formData.role === "Faculty Advisor" ? "Motivation for Participating" : "Motivation for Choices"} <span className="text-red-500">*</span>
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {formData.role === "Faculty Advisor" ? "Why is your institution participating in this conference?" : "Why do you want to participate in this conference and represent your chosen countries?"}
+                  </p>
                   <Textarea
                     id="motivation"
                     placeholder="I am deeply interested in global health policies..."

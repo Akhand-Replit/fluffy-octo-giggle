@@ -21,6 +21,8 @@ export async function suggestCountryAssignments(
   // 1. Get only approved applications for this committee
   const validApps = applications.filter(app => 
     app.status === "approved" && 
+    app.role !== "Faculty Advisor" &&
+    app.role !== "faculty_advisor" &&
     (app.assignedCommittee === committee.name || app.choices.primary.committee === committee.name)
   );
 

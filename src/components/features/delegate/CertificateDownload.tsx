@@ -1,12 +1,16 @@
 "use client";
 
-import { useRef } from "react";
+import { useRef, useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Award, Download, Printer, ShieldCheck } from "lucide-react";
+import { Award, Download, Printer, ShieldCheck, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
+import { generateCertificate, getCertificateUrl } from "@/lib/services/certificateService";
 
 interface CertificateDownloadProps {
+  eventId: string;
+  delegateUid: string;
+  applicationId: string;
   delegateName: string;
   conferenceName: string;
   committeeName: string;
@@ -16,6 +20,9 @@ interface CertificateDownloadProps {
 }
 
 export function CertificateDownload({ 
+  eventId,
+  delegateUid,
+  applicationId,
   delegateName, 
   conferenceName, 
   committeeName, 
@@ -24,9 +31,41 @@ export function CertificateDownload({
   role 
 }: CertificateDownloadProps) {
   const certificateRef = useRef<HTMLDivElement>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [cachedUrl, setCachedUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Check if certificate already exists
+    const checkExisting = async () => {
+      const url = await getCertificateUrl(eventId, applicationId);
+      if (url) {
+        setCachedUrl(url);
+      }
+    };
+    checkExisting();
+  }, [eventId, applicationId]);
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleDownloadPdf = async () => {
+    if (cachedUrl) {
+      window.open(cachedUrl, "_blank");
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const res = await generateCertificate({ eventId, delegateUid, applicationId });
+      setCachedUrl(res.url);
+      window.open(res.url, "_blank");
+    } catch (error) {
+      console.error("Failed to generate certificate", error);
+      alert("Failed to generate certificate. Please try again later.");
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
@@ -91,11 +130,16 @@ export function CertificateDownload({
           </div>
 
           <div className="flex flex-col sm:flex-row gap-3 justify-center">
-            <Button className="gap-2 shadow-lg shadow-primary/20" onClick={handlePrint}>
+            <Button className="gap-2 shadow-lg shadow-primary/20" onClick={handlePrint} disabled={isGenerating}>
               <Printer className="w-4 h-4" /> Print Certificate
             </Button>
-            <Button variant="outline" className="gap-2">
-              <Download className="w-4 h-4" /> Download PDF
+            <Button variant="outline" className="gap-2" onClick={handleDownloadPdf} disabled={isGenerating}>
+              {isGenerating ? (
+                <Loader2 className="w-4 h-4 animate-spin" />
+              ) : (
+                <Download className="w-4 h-4" />
+              )}
+              {isGenerating ? "Generating PDF..." : (cachedUrl ? "Download PDF Again" : "Download PDF")}
             </Button>
           </div>
         </CardContent>

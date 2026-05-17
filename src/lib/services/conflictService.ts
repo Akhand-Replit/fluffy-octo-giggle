@@ -9,6 +9,7 @@ export interface ConflictRecord {
 }
 
 export async function checkConflict(userId: string, country: string, excludeEventId: string): Promise<ConflictRecord | null> {
+  if (!userId || !country) return null;
   try {
     const q = query(
       collectionGroup(db, "applications"),

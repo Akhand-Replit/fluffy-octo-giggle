@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "@/contexts/AuthContext";
+import { useProStatus } from "@/lib/hooks/useProStatus";
 import { Bell, Menu, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -30,6 +31,7 @@ const navItems = [
 
 export function Header() {
   const { user, logout } = useAuth();
+  const { isPro } = useProStatus();
   const pathname = usePathname();
 
   const getInitials = (name?: string | null) => {
@@ -123,6 +125,11 @@ export function Header() {
                 <span className="ml-4 text-sm font-semibold leading-6 text-foreground" aria-hidden="true">
                   {user?.displayName || "User"}
                 </span>
+                {isPro && (
+                  <span className="ml-2 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                    PRO
+                  </span>
+                )}
               </span>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56 glass-card">

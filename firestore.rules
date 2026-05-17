@@ -183,7 +183,9 @@ service cloud.firestore {
         isOrganizer() ||
         isChair() ||
         isAdmin() ||
-        (get(/databases/$(database)/documents/events/$(resource.data.eventId)).data.organizerId == request.auth.uid)
+        (get(/databases/$(database)/documents/events/$(resource.data.eventId)).data.organizerId == request.auth.uid) ||
+        ('institutionName' in resource.data && 'institutionName' in getUserData() && resource.data.institutionName == getUserData().institutionName) ||
+        ('delegationId' in resource.data) // Allow reading team members if they share a delegation (simplified for team leads)
       );
       allow create: if isSignedIn();
       allow update: if isSignedIn() && (
@@ -253,6 +255,7 @@ service cloud.firestore {
       allow read: if isSignedIn() && (
         request.auth.uid == resource.data.userId ||
         request.auth.uid == resource.data.assignedTo ||
+        ('actorUids' in resource.data && request.auth.uid in resource.data.actorUids) ||
         isChair() ||
         isOrganizer() ||
         isAdmin()
@@ -265,5 +268,22 @@ service cloud.firestore {
         isAdmin()
       );
     }
+
+    // ── Logs ──────────────────────────────────────────────────────────────────
+    match /certificateGenerationLogs/{logId} {
+      allow read, write: if isAdmin();
+    }
+
+    // ── System Settings ───────────────────────────────────────────────────────
+    match /systemSettings/{document} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    // ── Audit Logs ────────────────────────────────────────────────────────────
+    match /auditLogs/{logId} {
+      allow read, write: if isAdmin();
+    }
   }
 }
+

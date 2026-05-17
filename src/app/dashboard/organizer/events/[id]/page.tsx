@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Users, Settings, Globe2, Clock, CheckCircle2,
-  Mail, CalendarDays, ExternalLink, Activity, Target, MessageSquare, ArrowRight, BookOpen, Award
+  Mail, CalendarDays, ExternalLink, Activity, Target, MessageSquare, ArrowRight, BookOpen, Award, AlertTriangle
 } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
@@ -143,7 +143,7 @@ export default function OrganizerEventOverviewPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Left Column */}
         <div className="lg:col-span-2 space-y-6">
-          <Card className="glass-card h-full">
+          <Card className="glass-card">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <div>
                 <CardTitle>Recent Applications</CardTitle>
@@ -178,41 +178,45 @@ export default function OrganizerEventOverviewPage() {
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
              {/* Pending Assignments */}
-             <Card className="glass-card">
+             <Card className="glass-card flex flex-col">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <Globe2 className="w-5 h-5 text-blue-500" /> Country Assignments
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                <p className="text-3xl font-bold mb-1">{pendingAssignments}</p>
-                <p className="text-sm text-muted-foreground mb-4">Pending assignments</p>
-                <Button className="w-full gap-2" variant={pendingAssignments > 0 ? "default" : "secondary"} onClick={() => router.push(`/dashboard/organizer/events/${eventId}/countries`)}>
+              <CardContent className="flex-1 flex flex-col">
+                <div className="flex-1">
+                  <p className="text-3xl font-bold mb-1">{pendingAssignments}</p>
+                  <p className="text-sm text-muted-foreground mb-4">Pending assignments</p>
+                </div>
+                <Button className="w-full gap-2 mt-auto" variant={pendingAssignments > 0 ? "default" : "secondary"} onClick={() => router.push(`/dashboard/organizer/events/${eventId}/countries`)}>
                   Assign Now <ArrowRight className="w-4 h-4" />
                 </Button>
               </CardContent>
             </Card>
 
             {/* Next Schedule Item */}
-            <Card className="glass-card">
+            <Card className="glass-card flex flex-col">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <Clock className="w-5 h-5 text-orange-500" /> Upcoming Session
                 </CardTitle>
               </CardHeader>
-              <CardContent>
-                {nextSession ? (
-                  <>
-                    <p className="font-semibold mb-1 truncate">{nextSession.title}</p>
-                    <p className="text-sm text-muted-foreground mb-4">{new Date(nextSession.startTime).toLocaleString()} - {nextSession.location}</p>
-                  </>
-                ) : (
-                  <>
-                    <p className="font-semibold mb-1">No upcoming sessions</p>
-                    <p className="text-sm text-muted-foreground mb-4">Within 7 days</p>
-                  </>
-                )}
-                <Button className="w-full gap-2" variant="outline" onClick={() => router.push(`/dashboard/organizer/events/${eventId}/schedule`)}>
+              <CardContent className="flex-1 flex flex-col">
+                <div className="flex-1">
+                  {nextSession ? (
+                    <>
+                      <p className="font-semibold mb-1 truncate">{nextSession.title}</p>
+                      <p className="text-sm text-muted-foreground mb-4">{new Date(nextSession.startTime).toLocaleString()} - {nextSession.location}</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="font-semibold mb-1">No upcoming sessions</p>
+                      <p className="text-sm text-muted-foreground mb-4">Within 7 days</p>
+                    </>
+                  )}
+                </div>
+                <Button className="w-full gap-2 mt-auto" variant="outline" onClick={() => router.push(`/dashboard/organizer/events/${eventId}/schedule`)}>
                   View Full Schedule <ArrowRight className="w-4 h-4" />
                 </Button>
               </CardContent>
@@ -254,6 +258,10 @@ export default function OrganizerEventOverviewPage() {
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-3">
+                <Link href={`/dashboard/organizer/events/${eventId}/complaints`} className="flex flex-col items-center justify-center p-3 rounded-xl bg-secondary/5 hover:bg-secondary/10 border border-border/40 transition-colors text-center group">
+                  <Badge className="mb-2 bg-primary/10 text-primary group-hover:bg-primary/20"><AlertTriangle className="w-4 h-4" /></Badge>
+                  <span className="text-xs font-medium">Complaints</span>
+                </Link>
                 <Link href={`/dashboard/organizer/events/${eventId}/tools/id-cards`} className="flex flex-col items-center justify-center p-3 rounded-xl bg-secondary/5 hover:bg-secondary/10 border border-border/40 transition-colors text-center group">
                   <Badge className="mb-2 bg-primary/10 text-primary group-hover:bg-primary/20"><Users className="w-4 h-4" /></Badge>
                   <span className="text-xs font-medium">ID Cards</span>

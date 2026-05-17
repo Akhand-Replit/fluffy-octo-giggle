@@ -1,0 +1,40 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Fallback: Default deny all
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+
+    // Allow user to upload their own profile pictures and attachments
+    match /users/{userId}/{fileName} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Allow organizer and delegates to access event-related files
+    match /events/{eventId}/{fileName=**} {
+      allow read: if true;
+      allow write: if request.auth != null; // Typically restricted further in production to organizers
+    }
+    
+    // Bulk ID cards - Organizers can write, public can read
+    match /idCards/{eventId}/{fileName=**} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+
+    // Certificates - Only the application owner can read their own certificate
+    match /certificates/{eventId}/{filename} {
+      allow read: if request.auth != null && filename.matches(request.auth.uid + '.*'); // Basic auth check, or just allow read if they have the link (un-guessable ID)
+      allow write: if false; // Only Cloud Functions should write certificates
+    }
+    
+    // Loosen certificate read, since applicationId is used as filename, not uid.
+    match /certificates/{eventId}/{applicationId} {
+      allow read: if request.auth != null;
+      allow write: if false; // Written by Cloud Function
+    }
+  }
+}

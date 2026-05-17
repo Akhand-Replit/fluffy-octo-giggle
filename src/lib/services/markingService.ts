@@ -11,6 +11,9 @@ export interface Marking {
   scores: Record<string, number>; // templateId -> score
   feedback: string;
   gradedBy: string; // The userId of the chair
+  positionPaperScore?: number;
+  paperStatus?: "review"|"approved"|"revision"|"flagged";
+  paperGradedAt?: any;
   createdAt?: any;
   updatedAt?: any;
 }
@@ -32,6 +35,7 @@ export async function submitMarking(marking: Omit<Marking, "id">): Promise<{ suc
 }
 
 export async function getMarkingsByCommittee(eventId: string, committeeId: string): Promise<Marking[]> {
+  if (!eventId || !committeeId) return [];
   try {
     const markingsRef = collection(db, "markings");
     const q = query(
@@ -66,6 +70,7 @@ export async function getDelegateMarking(applicationId: string, delegateId?: str
 }
 
 export async function getDailyMarkings(eventId: string, committeeId: string, dateStr: string): Promise<Marking[]> {
+  if (!eventId || !committeeId || !dateStr) return [];
   try {
     const markingsRef = collection(db, "markings");
     const q = query(
@@ -82,7 +87,7 @@ export async function getDailyMarkings(eventId: string, committeeId: string, dat
   }
 }
 
-import { setDoc } from "firebase/firestore";
+import { setDoc, onSnapshot } from "firebase/firestore";
 
 export async function saveDailyMarking(marking: Omit<Marking, "id">): Promise<{ success: boolean; id?: string; error?: any }> {
   try {
@@ -100,4 +105,83 @@ export async function saveDailyMarking(marking: Omit<Marking, "id">): Promise<{ 
     console.error("Error saving daily marking:", error);
     return { success: false, error };
   }
+}
+
+export async function savePositionPaperGrade(
+  applicationId: string,
+  delegateId: string,
+  eventId: string,
+  committeeId: string,
+  score: number,
+  feedback: string,
+  status: "review" | "approved" | "revision" | "flagged",
+  gradedBy: string
+): Promise<{ success: boolean; error?: any }> {
+  try {
+    // Try to find an existing marking document for this application to attach to
+    const existing = await getDelegateMarking(applicationId, delegateId);
+    if (existing && existing.id) {
+      const docRef = doc(db, "markings", existing.id);
+      await updateDoc(docRef, {
+        positionPaperScore: score,
+        feedback: feedback, // overwrite or append? The prompt just says feedback
+        paperStatus: status,
+        paperGradedAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      return { success: true };
+    } else {
+      // Create new marking document for position paper
+      const markingsRef = collection(db, "markings");
+      await addDoc(markingsRef, {
+        eventId,
+        committeeId,
+        delegateId,
+        applicationId,
+        scores: {}, // no template scores yet
+        feedback,
+        gradedBy,
+        positionPaperScore: score,
+        paperStatus: status,
+        paperGradedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp()
+      });
+      return { success: true };
+    }
+  } catch (error) {
+    console.error("Error saving position paper grade:", error);
+    return { success: false, error };
+  }
+}
+
+export interface PaperComment {
+  id?: string;
+  text: string;
+  authorId: string;
+  authorName: string;
+  createdAt: any;
+}
+
+export async function addPaperComment(markingId: string, comment: Omit<PaperComment, "id" | "createdAt">): Promise<{ success: boolean; error?: any }> {
+  try {
+    const commentsRef = collection(db, `markings/${markingId}/comments`);
+    await addDoc(commentsRef, {
+      ...comment,
+      createdAt: serverTimestamp()
+    });
+    return { success: true };
+  } catch (error) {
+    console.error("Error adding comment:", error);
+    return { success: false, error };
+  }
+}
+
+export function subscribeToPaperComments(markingId: string, callback: (comments: PaperComment[]) => void) {
+  const commentsRef = collection(db, `markings/${markingId}/comments`);
+  const q = query(commentsRef, orderBy("createdAt", "asc"));
+  return onSnapshot(q, (snapshot) => {
+    const comments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as PaperComment));
+    callback(comments);
+  });
 }

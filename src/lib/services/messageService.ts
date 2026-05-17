@@ -43,6 +43,7 @@ export function getUserConversations(
   uid: string,
   callback: (conversations: ConversationData[]) => void
 ): () => void {
+  if (!uid) { callback([]); return () => {}; }
   const ref = collection(db, "conversations");
   const q = query(ref, where("participants", "array-contains", uid), orderBy("updatedAt", "desc"));
   return onSnapshot(q, snap => {

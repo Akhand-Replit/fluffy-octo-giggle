@@ -41,7 +41,7 @@ export function getRecentActivitiesRealtime(
   const ref = collection(db, "activities");
   let q: Query = query(ref, orderBy("createdAt", "desc"), limit(limitCount));
 
-  if (scope === "Mine") {
+  if (scope === "Mine" && uid) {
     q = query(ref, where("userId", "==", uid), orderBy("createdAt", "desc"), limit(limitCount));
   } else if (scope === "Following" && followingUids.length > 0) {
     // Cannot do 'in' array of length 0 or > 30. For simple case assume <= 30.

@@ -15,13 +15,14 @@ import { CertificateDownload } from "@/components/features/delegate/CertificateD
 import { StudyGuideViewer } from "@/components/features/delegate/StudyGuideViewer";
 import { AnnouncementViewer } from "@/components/features/delegate/AnnouncementViewer";
 import { RoomNotifications } from "@/components/features/delegate/RoomNotifications";
-import { FacultyAdvisorPortal } from "@/components/features/delegate/FacultyAdvisorPortal";
-import { TeamDelegationSection } from "@/components/features/delegate/TeamDelegationSection";
+import { FacultyAdvisorPanel } from "@/components/features/delegate/FacultyAdvisorPanel";
+import { TeamDelegationPanel } from "@/components/features/delegate/TeamDelegationPanel";
 import { FoodCouponsModule } from "@/components/features/delegate/modules/FoodCouponsModule";
 import { TransportModule } from "@/components/features/delegate/modules/TransportModule";
 import { AccommodationModule } from "@/components/features/delegate/modules/AccommodationModule";
 import { DressCodeModule } from "@/components/features/delegate/modules/DressCodeModule";
 import { LiveMUNModule } from "@/components/features/delegate/modules/LiveMUNModule";
+import { ProGate } from "@/components/ProGate";
 import {
   Calendar, MapPin, Users, Globe2, FileText, Clock,
   AlertTriangle, Award, Trophy, Star, Megaphone, Utensils,
@@ -99,9 +100,10 @@ export default function ConferencePortalPage() {
 
   const appId = (application as any).id as string;
   const optionalModules: string[] = (event as any).optionalModules || [];
-  const committeeId = application.assignedCommittee || application.choices.primary.committee;
-  const isFacultyAdvisor = application.role === "faculty_advisor";
-  const hasDelegation = !!(application as any).delegationId;
+  const committeeId = application.assignedCommittee || application.choices?.primary?.committee;
+  const isFacultyAdvisor = application.role === "Faculty Advisor" || application.role === "faculty_advisor";
+  const isTeamLead = application.role === "Team Delegation Lead" || application.role === "team_head";
+  const hasDelegation = !!(application as any).delegationId || !!(application as any).teamApplicationParentId || isTeamLead;
 
   return (
     <div className="space-y-8 pb-20">
@@ -186,7 +188,7 @@ export default function ConferencePortalPage() {
 
       {/* Faculty Advisor — completely different portal layout */}
       {isFacultyAdvisor ? (
-        <FacultyAdvisorPortal
+        <FacultyAdvisorPanel
           event={event}
           myApplication={application}
           advisorUid={user!.uid}
@@ -195,7 +197,7 @@ export default function ConferencePortalPage() {
         <>
           {/* Team section (if member of a delegation) */}
           {hasDelegation && (
-            <TeamDelegationSection
+            <TeamDelegationPanel
               event={event}
               myApplication={application as ApplicationData & { id?: string }}
             />
@@ -310,13 +312,18 @@ export default function ConferencePortalPage() {
               )}
               {optionalModules.includes("livemun") && (
                 <TabsContent value="livemun" className="mt-0 outline-none">
-                  <LiveMUNModule eventId={event.id!} />
+                  <ProGate feature="Live MUN Module">
+                    <LiveMUNModule eventId={event.id!} />
+                  </ProGate>
                 </TabsContent>
               )}
 
               {/* Certificates */}
               <TabsContent value="certificate" className="mt-0 outline-none">
                 <CertificateDownload
+                  eventId={event.id!}
+                  delegateUid={user!.uid}
+                  applicationId={appId}
                   delegateName={user?.displayName || "Delegate Name"}
                   conferenceName={event.title}
                   committeeName={committeeId}

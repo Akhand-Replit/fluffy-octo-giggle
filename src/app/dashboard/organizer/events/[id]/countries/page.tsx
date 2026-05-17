@@ -11,6 +11,7 @@ import { CountryAssignmentRow, Applicant } from '@/components/features/organizer
 import { Globe, Clock, Bot, Save, AlertTriangle } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { getEventById, Committee } from '@/lib/services/eventService';
+import { ProGate } from '@/components/ProGate';
 import { getApplicationsByEvent, updateApplication, ApplicationData } from '@/lib/services/applicationService';
 import { suggestCountryAssignments, applyAIAssignments } from '@/lib/services/aiAssignmentService';
 import { batchCheckConflicts, ConflictRecord } from '@/lib/services/conflictService';
@@ -216,10 +217,19 @@ export default function CountryManagementPage() {
                 </CardDescription>
               </div>
               <div className="flex gap-2">
-                <Button variant="outline" onClick={handleAutoAssign} disabled={isAiLoading || unassignedCount === 0 || (timeLeft === 0 && assignmentMode === 'ai')} className="gap-2">
-                  {isAiLoading ? <Clock className="w-4 h-4 animate-spin" /> : <Bot className="w-4 h-4 text-violet-600" />}
-                  AI Auto-Assign
-                </Button>
+                <ProGate 
+                  feature="AI Country Assignment" 
+                  lockedFallback={
+                    <Button variant="outline" disabled className="gap-2">
+                      <Bot className="w-4 h-4" /> AI Auto-Assign
+                    </Button>
+                  }
+                >
+                  <Button variant="outline" onClick={handleAutoAssign} disabled={isAiLoading || unassignedCount === 0 || (timeLeft === 0 && assignmentMode === 'ai')} className="gap-2">
+                    {isAiLoading ? <Clock className="w-4 h-4 animate-spin" /> : <Bot className="w-4 h-4 text-violet-600" />}
+                    AI Auto-Assign
+                  </Button>
+                </ProGate>
                 <Button onClick={handleSave} disabled={timeLeft === 0 && assignmentMode === 'ai'} className="bg-violet-600 hover:bg-violet-700 text-white gap-2">
                   <Save className="w-4 h-4" /> Save
                 </Button>

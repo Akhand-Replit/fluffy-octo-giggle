@@ -7,15 +7,17 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Palette, Lock } from 'lucide-react';
+import { Palette } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useProStatus } from '@/lib/hooks/useProStatus';
+import { ProGate } from '@/components/ProGate';
 import { getEventById, updateEvent, EventData } from '@/lib/services/eventService';
 
 export default function ThemeToolPage() {
   const params = useParams();
   const eventId = params.id as string;
   const { profile } = useAuth();
-  const isPro = profile?.proStatus === 'active';
+  const { isPro } = useProStatus();
 
   const [theme, setTheme] = useState('classic-blue');
   const [customHex, setCustomHex] = useState('#4f46e5');
@@ -97,17 +99,26 @@ export default function ThemeToolPage() {
               <div className="pt-4 border-t space-y-4">
                 <div className="flex items-center justify-between">
                   <Label>Custom Color</Label>
-                  {!isPro && <Badge variant="outline" className="text-xs"><Lock className="w-3 h-3 mr-1" /> PRO</Badge>}
                 </div>
-                <div className={`flex items-center gap-3 ${!isPro ? 'opacity-50 pointer-events-none' : ''}`}>
-                  <input
-                    type="color"
-                    value={customHex}
-                    onChange={e => { setCustomHex(e.target.value); setTheme('custom'); }}
-                    className="w-10 h-10 rounded cursor-pointer border-0 p-0"
-                  />
-                  <span className="text-sm font-mono uppercase">{customHex}</span>
-                </div>
+                <ProGate 
+                  feature="Custom Event Themes" 
+                  lockedFallback={
+                    <div className="flex items-center gap-3 opacity-50 pointer-events-none">
+                      <input type="color" value={customHex} disabled className="w-10 h-10 rounded border-0 p-0" />
+                      <span className="text-sm font-mono uppercase">{customHex}</span>
+                    </div>
+                  }
+                >
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={customHex}
+                      onChange={e => { setCustomHex(e.target.value); setTheme('custom'); }}
+                      className="w-10 h-10 rounded cursor-pointer border-0 p-0"
+                    />
+                    <span className="text-sm font-mono uppercase">{customHex}</span>
+                  </div>
+                </ProGate>
               </div>
 
               <Button className="w-full bg-violet-600 hover:bg-violet-700 text-white" onClick={handleSave} disabled={saving}>

@@ -8,6 +8,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Send, Save, Users, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useAuth } from '@/contexts/AuthContext';
+import { useProStatus } from '@/lib/hooks/useProStatus';
+import { ProGate } from '@/components/ProGate';
 import { getApplicationsByEvent, ApplicationData } from '@/lib/services/applicationService';
 
 interface AnnouncementComposerProps {
@@ -34,7 +36,7 @@ const ROLE_KEYWORDS: Record<string, string[]> = {
 
 export function AnnouncementComposer({ eventId, onSend, onSaveDraft }: AnnouncementComposerProps) {
   const { profile } = useAuth();
-  const isPro = profile?.proStatus === 'active';
+  const { isPro } = useProStatus();
 
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
@@ -67,7 +69,6 @@ export function AnnouncementComposer({ eventId, onSend, onSaveDraft }: Announcem
   const handleSend = async () => {
     if (!subject || !body) return;
     if (estimatedRecipients > 50 && !isPro) {
-      alert('Pro Feature: Sending to more than 50 recipients requires a Pro subscription.');
       return;
     }
     setLoading(true);
@@ -184,13 +185,32 @@ export function AnnouncementComposer({ eventId, onSend, onSaveDraft }: Announcem
         <Button variant="outline" onClick={handleDraft} disabled={loading || !subject}>
           <Save className="w-4 h-4 mr-2" /> Save Draft
         </Button>
-        <Button
-          onClick={handleSend}
-          disabled={loading || !subject || !body || (estimatedRecipients > 50 && !isPro)}
-          className="bg-violet-600 hover:bg-violet-700 text-white"
-        >
-          <Send className="w-4 h-4 mr-2" /> Send Now
-        </Button>
+        {estimatedRecipients > 50 ? (
+          <ProGate 
+            feature="Bulk Emails (>50)"
+            lockedFallback={
+              <Button disabled className="bg-violet-600 text-white opacity-50">
+                <Send className="w-4 h-4 mr-2" /> Send Now
+              </Button>
+            }
+          >
+            <Button
+              onClick={handleSend}
+              disabled={loading || !subject || !body}
+              className="bg-violet-600 hover:bg-violet-700 text-white"
+            >
+              <Send className="w-4 h-4 mr-2" /> Send Now
+            </Button>
+          </ProGate>
+        ) : (
+          <Button
+            onClick={handleSend}
+            disabled={loading || !subject || !body}
+            className="bg-violet-600 hover:bg-violet-700 text-white"
+          >
+            <Send className="w-4 h-4 mr-2" /> Send Now
+          </Button>
+        )}
       </CardFooter>
     </Card>
   );

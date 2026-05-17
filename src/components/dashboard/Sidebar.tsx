@@ -6,9 +6,10 @@ import { motion } from "framer-motion";
 import {
   LayoutDashboard, MessageSquare, LogOut, FileText, Award, Settings,
   Globe2, Users, Gauge, Megaphone, Handshake, CreditCard, Crown,
-  IdCard, Palette, CheckSquare, ArrowLeft, CalendarDays, Landmark,
+  IdCard, Palette, CheckSquare, ArrowLeft, CalendarDays, Landmark, AlertTriangle
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { useProStatus } from "@/lib/hooks/useProStatus";
 import { cn } from "@/lib/utils";
 
 type NavItem = { name: string; href: string; icon: React.ElementType; exact?: boolean };
@@ -114,6 +115,11 @@ function StandardSidebar({ pathname }: { pathname: string }) {
             pathname={pathname}
             layoutId="active-std-sidebar"
           />
+          <NavItem
+            item={{ name: "Complaints", href: "/dashboard/admin/complaints", icon: AlertTriangle }}
+            pathname={pathname}
+            layoutId="active-std-sidebar"
+          />
         </>
       )}
     </div>
@@ -121,8 +127,20 @@ function StandardSidebar({ pathname }: { pathname: string }) {
 }
 
 function OrganizerSidebar({ pathname }: { pathname: string }) {
+  const { isPro } = useProStatus();
   return (
     <div className="flex-1 px-4 overflow-y-auto mt-4">
+      {isPro && (
+        <div className="mb-4 mx-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center shrink-0">
+            <Crown className="w-4 h-4 text-amber-600" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-amber-600">PRO Member</p>
+            <p className="text-[10px] text-amber-600/80">Active Subscription</p>
+          </div>
+        </div>
+      )}
       <NavItem
         item={{ name: "Messages", href: "/dashboard/messages", icon: MessageSquare }}
         pathname={pathname}
@@ -138,9 +156,21 @@ function OrganizerSidebar({ pathname }: { pathname: string }) {
 }
 
 function EventSidebar({ eventId, pathname }: { eventId: string; pathname: string }) {
+  const { isPro } = useProStatus();
   const base = `/dashboard/organizer/events/${eventId}`;
   return (
     <div className="flex-1 px-4 overflow-y-auto mt-4">
+      {isPro && (
+        <div className="mb-4 mx-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center shrink-0">
+            <Crown className="w-4 h-4 text-amber-600" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-amber-600">PRO Member</p>
+            <p className="text-[10px] text-amber-600/80">Active Subscription</p>
+          </div>
+        </div>
+      )}
       <NavItem
         item={{ name: "Messages", href: "/dashboard/messages", icon: MessageSquare }}
         pathname={pathname}
@@ -155,6 +185,7 @@ function EventSidebar({ eventId, pathname }: { eventId: string; pathname: string
       <NavItem item={{ name: "Announcements", href: `${base}/announcements`, icon: Megaphone }} pathname={pathname} layoutId="active-event-sidebar" />
       <NavItem item={{ name: "Partners", href: `${base}/partners`, icon: Handshake }} pathname={pathname} layoutId="active-event-sidebar" />
       <SectionLabel label="Tools" />
+      <NavItem item={{ name: "Complaints", href: `${base}/complaints`, icon: AlertTriangle }} pathname={pathname} layoutId="active-event-sidebar" />
       <NavItem item={{ name: "ID Cards", href: `${base}/tools/id-cards`, icon: IdCard }} pathname={pathname} layoutId="active-event-sidebar" />
       <NavItem item={{ name: "Certificates", href: `${base}/tools/certificates`, icon: Award }} pathname={pathname} layoutId="active-event-sidebar" />
       <NavItem item={{ name: "Theme", href: `${base}/tools/theme`, icon: Palette }} pathname={pathname} layoutId="active-event-sidebar" />

@@ -12,7 +12,7 @@ export interface ApplicationData {
   userId: string;
   applicantName?: string;
   applicantEmail?: string;
-  role: "Delegate" | "Observer" | "Head Delegate" | string;
+  role: "Delegate" | "Observer" | "Head Delegate" | "Faculty Advisor" | "Team Delegation Lead" | string;
   choices: {
     primary: ApplicationChoice;
     secondary: ApplicationChoice;
@@ -24,6 +24,16 @@ export interface ApplicationData {
   assignedCommittee?: string;
   assignedCountry?: string;
   createdAt?: any;
+  institutionName?: string;
+  studentsAccompanying?: number;
+  facultyPosition?: string;
+  yearsTeaching?: string;
+  teamSize?: number;
+  teamName?: string;
+  teamMembers?: { name: string; email: string; choices: { primary: ApplicationChoice; secondary: ApplicationChoice; tertiary: ApplicationChoice; } }[];
+  teamApplicationParentId?: string;
+  delegationId?: string;
+  delegationName?: string;
 }
 
 export async function submitApplication(application: ApplicationData): Promise<{ success: boolean; id?: string; error?: any }> {
@@ -41,7 +51,61 @@ export async function submitApplication(application: ApplicationData): Promise<{
   }
 }
 
+export async function submitTeamApplication(parentAppData: ApplicationData, teamMembers: any[]): Promise<{ success: boolean; id?: string; error?: any }> {
+  try {
+    const applicationsRef = collection(db, "applications");
+    const parentDocRef = await addDoc(applicationsRef, {
+      ...parentAppData,
+      createdAt: serverTimestamp()
+    });
+
+    const batch = writeBatch(db);
+    teamMembers.forEach(member => {
+      const newDocRef = doc(applicationsRef);
+      batch.set(newDocRef, {
+        eventId: parentAppData.eventId,
+        userId: member.email, // using email as placeholder for unregistered members
+        applicantName: member.name,
+        applicantEmail: member.email,
+        role: "Delegate",
+        choices: member.choices,
+        experience: parentAppData.experience,
+        motivation: parentAppData.motivation,
+        status: "pending",
+        teamApplicationParentId: parentDocRef.id,
+        delegationId: parentDocRef.id,
+        delegationName: parentAppData.teamName,
+        institutionName: parentAppData.institutionName,
+        createdAt: serverTimestamp()
+      });
+    });
+
+    await batch.commit();
+
+    return { success: true, id: parentDocRef.id };
+  } catch (error) {
+    console.error("Error submitting team application:", error);
+    return { success: false, error };
+  }
+}
+
+export async function submitFacultyApplication(parentAppData: ApplicationData): Promise<{ success: boolean; id?: string; error?: any }> {
+  try {
+    const applicationsRef = collection(db, "applications");
+    const docRef = await addDoc(applicationsRef, {
+      ...parentAppData,
+      createdAt: serverTimestamp()
+    });
+    
+    return { success: true, id: docRef.id };
+  } catch (error) {
+    console.error("Error submitting faculty application:", error);
+    return { success: false, error };
+  }
+}
+
 export async function getUserApplications(userId: string): Promise<ApplicationData[]> {
+  if (!userId) return [];
   try {
     const applicationsRef = collection(db, "applications");
     const q = query(

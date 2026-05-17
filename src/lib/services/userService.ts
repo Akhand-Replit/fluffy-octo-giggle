@@ -28,10 +28,11 @@ export interface UserProfile {
   privacySettings?: PrivacySettings;
   onboardingComplete?: boolean;
   isAdmin?: boolean;
-  proStatus?: 'none' | 'pending' | 'active' | 'rejected';
+  proStatus?: 'none' | 'pending' | 'active' | 'rejected' | 'expired';
   proFeatures?: string[];
   proAppliedAt?: any;
   proActivatedAt?: any;
+  proExpiresAt?: any;
 }
 
 export async function getUserProfile(uid: string): Promise<UserProfile | null> {

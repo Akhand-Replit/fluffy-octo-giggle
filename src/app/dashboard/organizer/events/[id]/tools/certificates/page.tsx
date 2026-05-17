@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Award, CheckCircle2 } from 'lucide-react';
 import { getEventById, updateEvent } from '@/lib/services/eventService';
+import { ProGate } from '@/components/ProGate';
 
 export default function CertificatesToolPage() {
   const params = useParams();
@@ -57,29 +58,39 @@ export default function CertificatesToolPage() {
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {templates.map(tpl => (
-          <Card
-            key={tpl.id}
-            className={`cursor-pointer transition-all ${selectedTemplate === tpl.id ? 'ring-2 ring-violet-600 shadow-md' : 'hover:border-violet-300'}`}
-            onClick={() => setSelectedTemplate(tpl.id)}
-          >
-            <CardHeader className="pb-2">
-              <div className="flex justify-between items-center">
-                <CardTitle className="text-base">{tpl.name}</CardTitle>
-                {selectedTemplate === tpl.id && <CheckCircle2 className="w-5 h-5 text-violet-600" />}
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className={`w-full aspect-[1.4] p-4 flex flex-col justify-center items-center shadow-inner scale-90 ${tpl.style}`}>
-                <Award className="w-8 h-8 mb-2 opacity-50" />
-                <div className="w-3/4 h-2 bg-slate-300 mb-2 rounded" />
-                <div className="w-1/2 h-4 bg-slate-800 mb-4 rounded" />
-                <div className="w-full h-1 bg-slate-200 mb-1 rounded" />
-                <div className="w-5/6 h-1 bg-slate-200 rounded" />
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+        {templates.map(tpl => {
+          const cardContent = (
+            <Card
+              key={tpl.id}
+              className={`cursor-pointer transition-all ${selectedTemplate === tpl.id ? 'ring-2 ring-violet-600 shadow-md' : 'hover:border-violet-300'}`}
+              onClick={() => setSelectedTemplate(tpl.id)}
+            >
+              <CardHeader className="pb-2">
+                <div className="flex justify-between items-center">
+                  <CardTitle className="text-base">{tpl.name}</CardTitle>
+                  {selectedTemplate === tpl.id && <CheckCircle2 className="w-5 h-5 text-violet-600" />}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className={`w-full aspect-[1.4] p-4 flex flex-col justify-center items-center shadow-inner scale-90 ${tpl.style}`}>
+                  <Award className="w-8 h-8 mb-2 opacity-50" />
+                  <div className="w-3/4 h-2 bg-slate-300 mb-2 rounded" />
+                  <div className="w-1/2 h-4 bg-slate-800 mb-4 rounded" />
+                  <div className="w-full h-1 bg-slate-200 mb-1 rounded" />
+                  <div className="w-5/6 h-1 bg-slate-200 rounded" />
+                </div>
+              </CardContent>
+            </Card>
+          );
+          if (tpl.id === 'ornate') {
+            return (
+              <ProGate key={tpl.id} feature="Advanced Certificate Templates" lockedFallback={<div className="opacity-50 pointer-events-none">{cardContent}</div>}>
+                {cardContent}
+              </ProGate>
+            );
+          }
+          return cardContent;
+        })}
       </div>
 
       <div className="flex justify-end">

@@ -18,7 +18,7 @@ export default function ApplicationsPage() {
   const eventId = params.id as string;
   const { user } = useAuth();
 
-  const [applications, setApplications] = useState<ApplicationData[]>([]);
+  const [applications, setApplications] = useState<(ApplicationData & { id: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -27,7 +27,7 @@ export default function ApplicationsPage() {
     async function loadApps() {
       if (!user || !eventId) return;
       const apps = await getApplicationsByEvent(eventId);
-      setApplications(apps);
+      setApplications(apps as (ApplicationData & { id: string })[]);
       setLoading(false);
     }
     loadApps();
@@ -82,7 +82,7 @@ export default function ApplicationsPage() {
             </div>
             <div className="flex items-center gap-2 w-full sm:w-auto">
               <Filter className="w-4 h-4 text-muted-foreground" />
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v ?? "all")}>
                 <SelectTrigger className="w-[140px] bg-background/50">
                   <SelectValue placeholder="All Status" />
                 </SelectTrigger>

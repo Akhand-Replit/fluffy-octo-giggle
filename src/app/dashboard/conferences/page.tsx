@@ -79,8 +79,8 @@ export default function MyConferencesPage() {
 
   async function handleWithdraw(appId: string) {
     if (!confirm("Are you sure you want to withdraw your application?")) return;
-    setApplications(prev => prev.map(a => a.id === appId ? { ...a, status: "withdrawn" } : a));
-    await updateApplication(appId, { status: "withdrawn" });
+    setApplications(prev => prev.map(a => a.id === appId ? { ...a, status: "withdrawn" as any } : a));
+    await updateApplication(appId, { status: "withdrawn" as any });
   }
 
   const sortedAndFiltered = applications
@@ -147,7 +147,7 @@ export default function MyConferencesPage() {
         <TabsContent value="my-conferences" className="mt-0">
           <div className="mb-6 flex flex-col sm:flex-row gap-4 justify-between items-center bg-secondary/30 p-4 rounded-xl border border-border/50">
             <div className="flex items-center gap-4 w-full sm:w-auto">
-              <Select value={filterRole} onValueChange={setFilterRole}>
+              <Select value={filterRole} onValueChange={(v) => setFilterRole(v ?? "All")}>
                 <SelectTrigger className="w-[140px] bg-background">
                   <SelectValue placeholder="Role" />
                 </SelectTrigger>
@@ -160,7 +160,7 @@ export default function MyConferencesPage() {
                 </SelectContent>
               </Select>
               
-              <Select value={sortBy} onValueChange={setSortBy}>
+              <Select value={sortBy} onValueChange={(v) => setSortBy(v ?? "Date ↓")}>
                 <SelectTrigger className="w-[140px] bg-background">
                   <SelectValue placeholder="Sort" />
                 </SelectTrigger>

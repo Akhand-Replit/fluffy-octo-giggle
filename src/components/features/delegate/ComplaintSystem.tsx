@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { ApplicationData } from "@/lib/services/applicationService";
+import { submitComplaint } from "@/lib/services/complaintService";
 import { EventData } from "@/lib/services/eventService";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -71,10 +72,12 @@ export function ComplaintSystem({ application, event }: ComplaintSystemProps) {
 
   useEffect(() => {
     async function fetchComplaints() {
+      const appId = (application as any).id;
+      if (!appId || !application.userId) { setLoading(false); return; }
       try {
         const q = query(
           collection(db, "complaints"),
-          where("applicationId", "==", (application as any).id),
+          where("applicationId", "==", appId),
           where("userId", "==", application.userId),
           orderBy("createdAt", "desc")
         );
@@ -91,7 +94,8 @@ export function ComplaintSystem({ application, event }: ComplaintSystemProps) {
 
   const findChairUid = async (): Promise<string | null> => {
     try {
-      const committeeName = application.assignedCommittee || application.choices.primary.committee;
+      const committeeName = application.assignedCommittee || application.choices?.primary?.committee;
+      if (!committeeName || !event.id) return null;
       const q = query(
         collection(db, "applications"),
         where("eventId", "==", event.id),
@@ -113,34 +117,22 @@ export function ComplaintSystem({ application, event }: ComplaintSystemProps) {
 
     try {
       const chairUid = await findChairUid();
-      const newComplaint = {
+      
+      const newComplaint = await submitComplaint({
         eventId: event.id,
         applicationId: (application as any).id,
         userId: application.userId,
         type,
         subject,
         description,
-        status: "open",
-        escalationLevel: 0,
-        assignedTo: chairUid,
-        assignedRole: "chair",
-        history: [{
-          action: "submitted",
-          actorUid: application.userId,
-          actorRole: "delegate",
-          message: "Complaint submitted.",
-          timestamp: new Date().toISOString(),
-        }],
-        resolution: "",
-        createdAt: serverTimestamp(),
-      };
+        chairUid,
+      });
 
-      const docRef = await addDoc(collection(db, "complaints"), newComplaint);
       setComplaints([{
-        id: docRef.id,
         ...newComplaint,
         createdAt: { toDate: () => new Date() },
       } as unknown as Complaint, ...complaints]);
+      
       setSubject("");
       setDescription("");
       setType("general");
